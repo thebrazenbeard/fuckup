@@ -95,7 +95,7 @@ def _promotion(conn, promotion_id, correction_id, revision, digest, qualificatio
         "policy-v1",
         "1",
         '{"allow": true}' if allow else '{"allow": false}',
-        "test-authority",
+        "sha256:" + "a" * 64,
         '{"agent":"demo"}',
         '{"action":"revoke"}',
     ]
@@ -768,7 +768,8 @@ def test_runtime_cannot_fabricate_promotion_and_authorizer_can_create_scoped_eff
             """
             SELECT id FROM create_authorized_promotion(
                 %s,%s,1,'sha256:a',%s,'strict','1',
-                '{"allow":true}'::jsonb,'policy-service','auth:test:1',
+                '{"allow":true}'::jsonb,'policy-service',
+                ('sha256:' || repeat('b',64)),
                 '{"agent":"demo"}'::jsonb,'{"action":"revoke"}'::jsonb
             )
             """,
