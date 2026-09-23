@@ -29,7 +29,11 @@ Use:
 `authorize_promotion(...)`
 
 at the authorization boundary. It recomputes the canonical validation report and
-policy decision from the supplied correction and qualification.
+policy decision from the supplied correction and qualification, snapshots the
+approved activation/rollback contracts, and derives a deterministic
+`authorization_ref` over the exact correction subject, qualification evidence,
+policy identity/version and decision inputs, activation scope, and rollback
+contract.
 
 The lower-level ledger `promote(...)` method is an internal apply primitive. It
 still rechecks current revision and canonical qualification, but its
@@ -58,5 +62,11 @@ This role separation does not make arbitrary policy JSON magically true. The
 authorizer is the trusted boundary that must call `authorize_promotion(...)` (or
 an equivalently controlled policy engine) before invoking the database creation
 function. Each promotion also carries a non-empty `authorization_ref` for
-provenance. A future cryptographic attestation can replace that trust assumption
-without changing the runtime/authorizer separation.
+provenance and exact-content binding.
+
+The current `authorization_ref` is a deterministic SHA-256 content digest, not
+a digital signature. It detects accidental or semantic mismatch between the
+trusted Python authorization artifact and the effect being published, but the
+database still trusts the separately provisioned authorizer role to submit that
+artifact faithfully. A future signed attestation can replace that trust
+assumption without changing the runtime/authorizer separation.
