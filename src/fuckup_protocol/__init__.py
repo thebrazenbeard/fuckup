@@ -8,7 +8,7 @@ from .ambiguity import (
     route_ambiguity,
 )
 from .authorization import PromotionAuthorization, authorize_promotion
-from .bindings import BindingConflictError, InjectionBinding, resolve_binding
+from .bindings import BindingConflictError, InjectionBinding, resolve_binding, selector_within_scope
 from .effectiveness import (
     EffectivenessState,
     EffectivenessSummary,
@@ -114,6 +114,7 @@ __all__ = [
     "recover_expired_lease",
     "require_transition",
     "resolve_binding",
+    "selector_within_scope",
     "route_ambiguity",
     "subject_digest",
     "succeed",
