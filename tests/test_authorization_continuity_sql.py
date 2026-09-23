@@ -6,7 +6,7 @@ AUTH_CONTINUITY = Path("migrations/0003_authorization_continuity.sql").read_text
 
 
 def test_generic_runtime_migration_no_longer_grants_promotion_or_binding_dml():
-    assert "GRANT INSERT (id, correction_id, correction_revision" not in RUNTIME_AUTHORITY
+    assert "ON %I.promotions TO %I" not in RUNTIME_AUTHORITY
     assert "GRANT UPDATE (revoked_at) ON %I.promotions" not in RUNTIME_AUTHORITY
     assert "GRANT INSERT (id, promotion_id, adapter, selector" not in RUNTIME_AUTHORITY
     assert "GRANT UPDATE (active, expires_at) ON %I.injection_bindings" not in RUNTIME_AUTHORITY
