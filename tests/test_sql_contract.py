@@ -81,9 +81,13 @@ def test_revocation_cannot_precede_activation():
 
 
 def test_plpgsql_function_delimiters_are_balanced():
-    assert MIGRATION.count("$$") % 2 == 0
-    assert "RETURNS SETOF events AS $$" in MIGRATION
-    assert "validate_correction_revision_insert() RETURNS trigger AS $$" in MIGRATION
+    assert MIGRATION.count("$") % 2 == 0
+    assert "RETURNS SETOF events AS $" in MIGRATION
+    assert "validate_correction_revision_insert() RETURNS trigger AS $" in MIGRATION
+    assert "jsonb_is_nonempty_string_map(p_value jsonb)" in MIGRATION
+    assert "STRICT\nAS $" in MIGRATION
+    assert "validate_injection_binding_insert() RETURNS trigger AS $" in MIGRATION
+    assert "protect_injection_binding_mutation() RETURNS trigger AS $" in MIGRATION
 
 
 def test_postgres_idempotency_compares_effect_fields_not_digest_only():
