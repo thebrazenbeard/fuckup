@@ -95,6 +95,7 @@ def _promotion(conn, promotion_id, correction_id, revision, digest, qualificatio
         "policy-v1",
         "1",
         '{"allow": true}' if allow else '{"allow": false}',
+        "test-authority",
         '{"agent":"demo"}',
         '{"action":"revoke"}',
     ]
@@ -105,9 +106,12 @@ def _promotion(conn, promotion_id, correction_id, revision, digest, qualificatio
         INSERT INTO promotions(
             id, correction_id, correction_revision, exact_subject_digest,
             qualification_id, policy_name, policy_version, policy_decision,
-            activation_scope, rollback_condition, activated_at
+            authorization_ref, activation_scope, rollback_condition, activated_at
         )
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s::jsonb, %s::jsonb, {activated_sql})
+        VALUES (
+            %s, %s, %s, %s, %s, %s, %s, %s::jsonb,
+            %s, %s::jsonb, %s::jsonb, {activated_sql}
+        )
         """,
         tuple(params),
     )
