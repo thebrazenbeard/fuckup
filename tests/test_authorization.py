@@ -121,3 +121,38 @@ def test_authorization_ref_binds_rollback_condition():
         rollback_condition={"action": "revoke on security regression"},
     )
     assert left.authorization_ref != right.authorization_ref
+
+
+
+def test_authorization_rejects_non_object_rollback_contract():
+    correction = CorrectionRevision("c1", 1, "sha256:a", {"rule": "x"})
+    auth = authorize_promotion(
+        correction=correction,
+        qualification=_qualification(correction),
+        root_cause_supported=True,
+        ambiguous=False,
+        activation_scope={"agent": "demo"},
+        rollback_condition="revoke on regression",  # type: ignore[arg-type]
+    )
+    assert not auth.decision.allow
+    assert auth.rollback_condition is None
+    assert auth.authorization_ref is None
+    assert any("non-empty JSON object" in reason for reason in auth.decision.reasons)
+
+
+def test_authorization_freezes_nested_rollback_contract():
+    correction = CorrectionRevision("c1", 1, "sha256:a", {"rule": "x"})
+    rollback = {"action": "revoke", "conditions": ["regression"]}
+    auth = authorize_promotion(
+        correction=correction,
+        qualification=_qualification(correction),
+        root_cause_supported=True,
+        ambiguous=False,
+        activation_scope={"agent": "demo"},
+        rollback_condition=rollback,
+    )
+    first_ref = auth.authorization_ref
+    rollback["conditions"].append("security")
+
+    assert tuple(auth.rollback_condition["conditions"]) == ("regression",)
+    assert auth.authorization_ref == first_ref
