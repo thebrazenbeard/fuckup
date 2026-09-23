@@ -4,11 +4,41 @@ BEGIN;
 -- Do not install it in public: SECURITY DEFINER functions deliberately bind
 -- their search_path to the installation schema.
 DO $authority_check$
+DECLARE
+    s name := current_schema();
+    schema_owner name;
 BEGIN
-    IF current_schema() = 'public' THEN
+    IF s = 'public' THEN
         RAISE EXCEPTION
             'F.U.C.K.U.P. runtime authority must be installed in a dedicated trusted schema, not public';
     END IF;
+
+    SELECT owner_role.rolname
+      INTO schema_owner
+      FROM pg_catalog.pg_namespace ns
+      JOIN pg_catalog.pg_roles owner_role ON owner_role.oid = ns.nspowner
+     WHERE ns.nspname = s;
+
+    IF schema_owner IS DISTINCT FROM current_user THEN
+        RAISE EXCEPTION
+            'migration identity % must own trusted schema % (owner is %)',
+            current_user, s, schema_owner;
+    END IF;
+
+    -- A SECURITY DEFINER search path is only trusted if untrusted users cannot
+    -- create shadow objects in the schema.
+    EXECUTE format('REVOKE CREATE ON SCHEMA %I FROM PUBLIC', s);
+
+    IF pg_catalog.has_schema_privilege('public', s, 'CREATE') THEN
+        RAISE EXCEPTION 'trusted schema % remains writable by PUBLIC', s;
+    END IF;
+
+    -- PostgreSQL grants EXECUTE on newly-created functions to PUBLIC by
+    -- default. Harden future functions created by this migration owner too.
+    EXECUTE format(
+        'ALTER DEFAULT PRIVILEGES IN SCHEMA %I REVOKE EXECUTE ON FUNCTIONS FROM PUBLIC',
+        s
+    );
 END;
 $authority_check$ LANGUAGE plpgsql;
 

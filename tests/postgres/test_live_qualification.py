@@ -645,3 +645,11 @@ def test_runtime_role_rejects_public_sensitive_column_insert_bypass(db):
             )
         )
         conn.execute(sql.SQL("DROP ROLE IF EXISTS {}").format(sql.Identifier(runtime)))
+
+
+def test_trusted_schema_is_not_writable_by_public(db):
+    conn, schema = db
+    assert not conn.execute(
+        "SELECT pg_catalog.has_schema_privilege('public', %s, 'CREATE')",
+        (schema,),
+    ).fetchone()[0]

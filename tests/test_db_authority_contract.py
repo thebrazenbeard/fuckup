@@ -105,3 +105,13 @@ def test_runtime_role_rejects_forbidden_column_level_privileges():
         "pg_catalog.has_column_privilege",
     ]:
         assert token in AUTHORITY
+
+
+def test_trusted_schema_itself_is_locked_against_public_object_creation():
+    for token in [
+        "migration identity % must own trusted schema %",
+        "REVOKE CREATE ON SCHEMA %I FROM PUBLIC",
+        "pg_catalog.has_schema_privilege('public', s, 'CREATE')",
+        "ALTER DEFAULT PRIVILEGES IN SCHEMA %I REVOKE EXECUTE ON FUNCTIONS FROM PUBLIC",
+    ]:
+        assert token in AUTHORITY
