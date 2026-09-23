@@ -1,0 +1,97 @@
+experiment:
+  id: fuckup-semantic-salience-v0
+  status: design-only
+  purpose: >
+    Test whether the F.U.C.K.U.P. name/profanity contributes corrective-learning
+    performance beyond semantic stage labels, serialization structure, and
+    verified feedback.
+
+hypotheses:
+  h1_name_salience:
+    claim: F.U.C.K.U.P. protocol naming improves corrective-learning outcomes versus a neutral name.
+    status: unverified
+  h2_semantic_labels:
+    claim: meaningful stage labels outperform opaque labels.
+    status: evidence-supported-but-unverified-here
+  h3_serialization:
+    claim: serialization format materially affects fidelity and correction behavior.
+    status: evidence-supported-but-model-dependent
+  h4_verified_feedback:
+    claim: externally verified feedback reduces harmful self-correction versus ungrounded reflection.
+    status: evidence-supported
+
+factors:
+  protocol_name:
+    - id: FUCKUP
+      display: F.U.C.K.U.P.
+      note: profane/taboo + semantically congruent protocol name
+    - id: NEUTRAL_NAME
+      display: Corrective Learning Protocol
+      note: semantically descriptive, non-profane control
+    - id: ARBITRARY_NAME
+      display: Protocol Q7
+      note: low-semantic arbitrary control
+
+  labels:
+    - id: SEMANTIC
+      keys: [flag, understand, calibrate, know, unlearn, prevent]
+    - id: OPAQUE
+      keys: [stage_a, stage_b, stage_c, stage_d, stage_e, stage_f]
+
+  serialization:
+    - YAML
+    - JSON
+    - MARKDOWN
+    - PROSE
+
+  feedback:
+    - SELF_REFLECTION
+    - VERIFIED_EXTERNAL
+
+controls:
+  invariant_stage_meaning: true
+  invariant_task_set: true
+  invariant_model_parameters: true
+  randomize_condition_order: true
+  blind_evaluation_where_possible: true
+  record_model_and_provider_version: true
+  record_prompt_digest: true
+  record_task_digest: true
+
+task_families:
+  - factual_correction
+  - instruction_following
+  - code_bug
+  - tool_selection
+  - retrieval_error
+  - planning_error
+
+required_evaluation_sets:
+  - original_failure
+  - exact_recurrence
+  - near_transfer
+  - far_transfer
+  - retain
+  - anti_trigger
+
+primary_metrics:
+  - durable_correction_success
+  - exact_recurrence_rate
+  - near_transfer_rate
+  - retain_pass_rate
+  - anti_trigger_pass_rate
+  - introduced_error_rate
+
+secondary_metrics:
+  - far_transfer_rate
+  - schema_validity_rate
+  - trigger_precision
+  - trigger_recall
+  - latency_ms
+  - input_tokens
+  - output_tokens
+
+promotion_rule:
+  note: >
+    Experimental results may update evidence/confidence about protocol design.
+    They must not automatically promote a durable correction or model change.
