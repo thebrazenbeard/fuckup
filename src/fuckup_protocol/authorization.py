@@ -4,6 +4,7 @@ from dataclasses import dataclass
 
 from .models import CorrectionRevision, PolicyDecision, QualificationResult
 from .policy import PromotionContext, PromotionPolicy, StrictPromotionPolicy
+from .scope import SelectorScope
 from .validation import ValidationReport
 
 
@@ -19,7 +20,7 @@ def authorize_promotion(
     qualification: QualificationResult,
     root_cause_supported: bool,
     ambiguous: bool,
-    activation_scope: str | None,
+    activation_scope: SelectorScope | None,
     rollback_condition: str | None,
     irreversible_acknowledged: bool = False,
     policy: PromotionPolicy | None = None,
