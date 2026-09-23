@@ -1,12 +1,15 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from types import MappingProxyType
 from typing import Mapping
 
 from .models import CorrectionRevision, PolicyDecision, QualificationResult
 from .policy import PromotionContext, PromotionPolicy, StrictPromotionPolicy
 from .validation import ValidationReport
+
+
+_ISSUER_TOKEN = object()
 
 
 def _freeze_string_map(value: Mapping[str, str] | None, *, field: str) -> Mapping[str, str] | None:
@@ -28,8 +31,11 @@ class PromotionAuthorization:
     decision: PolicyDecision
     activation_scope: Mapping[str, str] | None
     rollback_condition: Mapping[str, str] | None
+    _issuer: object = field(repr=False, compare=False, default=None)
 
     def __post_init__(self) -> None:
+        if self._issuer is not _ISSUER_TOKEN:
+            raise ValueError("PromotionAuthorization must be issued by authorize_promotion()")
         scope = _freeze_string_map(self.activation_scope, field="activation_scope")
         rollback = _freeze_string_map(self.rollback_condition, field="rollback_condition")
         object.__setattr__(self, "activation_scope", scope)
@@ -71,4 +77,5 @@ def authorize_promotion(
         decision=decision,
         activation_scope=frozen_scope,
         rollback_condition=frozen_rollback,
+        _issuer=_ISSUER_TOKEN,
     )
