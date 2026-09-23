@@ -35,10 +35,11 @@ approved activation/rollback contracts, and derives a deterministic
 policy identity/version and decision inputs, activation scope, and rollback
 contract.
 
-The lower-level ledger `promote(...)` method is an internal apply primitive. It
-still rechecks current revision and canonical qualification, but its
-`PolicyDecision` argument is assumed to have come from a trusted policy
-evaluation boundary.
+The reference ledger `promote(...)` method consumes the resulting
+`PromotionAuthorization` artifact rather than a naked `PolicyDecision`. It
+rechecks current revision and the recorded qualification, then requires the
+authorization's validation snapshot to equal the canonical validation result
+for that exact stored qualification before it records the promotion.
 
 ## Database boundary
 
