@@ -431,6 +431,7 @@ def test_runtime_role_cannot_rewrite_authoritative_projection_or_bypass_event_gu
         assert guarded == event
     finally:
         conn.execute("RESET ROLE")
+        conn.execute(sql.SQL("DROP OWNED BY {}").format(sql.Identifier(role)))
         conn.execute(
             sql.SQL("REVOKE {} FROM {}").format(
                 sql.Identifier(role),
@@ -438,3 +439,143 @@ def test_runtime_role_cannot_rewrite_authoritative_projection_or_bypass_event_gu
             )
         )
         conn.execute(sql.SQL("DROP ROLE IF EXISTS {}").format(sql.Identifier(role)))
+
+
+def test_runtime_role_with_parent_membership_is_rejected(db):
+    conn, schema = db
+    privilege = conn.execute(
+        """
+        SELECT rolsuper OR rolcreaterole
+        FROM pg_catalog.pg_roles
+        WHERE rolname = current_user
+        """
+    ).fetchone()[0]
+    if not privilege:
+        pytest.skip("test database user needs SUPERUSER or CREATEROLE for role qualification")
+
+    parent = f"fuckup_parent_{uuid4().hex[:16]}"
+    runtime = f"fuckup_runtime_{uuid4().hex[:16]}"
+
+    try:
+        conn.execute(sql.SQL("CREATE ROLE {} NOLOGIN").format(sql.Identifier(parent)))
+        conn.execute(sql.SQL("CREATE ROLE {} NOLOGIN").format(sql.Identifier(runtime)))
+        conn.execute(
+            sql.SQL("GRANT UPDATE ON {}.corrections TO {}").format(
+                sql.Identifier(schema),
+                sql.Identifier(parent),
+            )
+        )
+        conn.execute(
+            sql.SQL("GRANT {} TO {}").format(
+                sql.Identifier(parent),
+                sql.Identifier(runtime),
+            )
+        )
+
+        with pytest.raises(psycopg.Error, match="must not be a member of another role"):
+            conn.execute("SELECT configure_fuckup_runtime_role(%s::name)", (runtime,))
+    finally:
+        conn.execute(
+            sql.SQL("REVOKE {} FROM {}").format(
+                sql.Identifier(parent),
+                sql.Identifier(runtime),
+            )
+        )
+        conn.execute(
+            sql.SQL("REVOKE ALL PRIVILEGES ON {}.corrections FROM {}").format(
+                sql.Identifier(schema),
+                sql.Identifier(parent),
+            )
+        )
+        conn.execute(sql.SQL("DROP ROLE IF EXISTS {}").format(sql.Identifier(runtime)))
+        conn.execute(sql.SQL("DROP ROLE IF EXISTS {}").format(sql.Identifier(parent)))
+
+
+def test_configured_runtime_role_can_use_guarded_worker_lifecycle(db):
+    conn, _schema = db
+    privilege = conn.execute(
+        """
+        SELECT rolsuper OR rolcreaterole
+        FROM pg_catalog.pg_roles
+        WHERE rolname = current_user
+        """
+    ).fetchone()[0]
+    if not privilege:
+        pytest.skip("test database user needs SUPERUSER or CREATEROLE for runtime-role qualification")
+
+    runtime = f"fuckup_runtime_{uuid4().hex[:16]}"
+    current_user = conn.execute("SELECT current_user").fetchone()[0]
+    job_complete, job_fail, *_ = _ids()
+
+    try:
+        conn.execute(sql.SQL("CREATE ROLE {} NOLOGIN").format(sql.Identifier(runtime)))
+        conn.execute("SELECT configure_fuckup_runtime_role(%s::name)", (runtime,))
+        conn.execute(
+            sql.SQL("GRANT {} TO {}").format(
+                sql.Identifier(runtime),
+                sql.Identifier(current_user),
+            )
+        )
+
+        conn.execute(sql.SQL("SET ROLE {}").format(sql.Identifier(runtime)))
+
+        conn.execute(
+            "INSERT INTO worker_jobs(id,job_type,payload,max_attempts) VALUES (%s,'q','{}'::jsonb,2)",
+            (job_complete,),
+        )
+        assert conn.execute("SELECT id FROM claim_worker_job('worker-a',30)").fetchone()[0] == job_complete
+        assert conn.execute("SELECT id FROM complete_worker_job(%s,'worker-a')", (job_complete,)).fetchone()[0] == job_complete
+
+        conn.execute(
+            "INSERT INTO worker_jobs(id,job_type,payload,max_attempts) VALUES (%s,'q','{}'::jsonb,1)",
+            (job_fail,),
+        )
+        assert conn.execute("SELECT id FROM claim_worker_job('worker-b',30)").fetchone()[0] == job_fail
+        failed = conn.execute(
+            "SELECT id,status FROM fail_worker_job(%s,'worker-b','{}'::jsonb,false,0)",
+            (job_fail,),
+        ).fetchone()
+        assert failed == (job_fail, "DEAD_LETTERED")
+    finally:
+        conn.execute("RESET ROLE")
+        conn.execute(sql.SQL("DROP OWNED BY {}").format(sql.Identifier(runtime)))
+        conn.execute(
+            sql.SQL("REVOKE {} FROM {}").format(
+                sql.Identifier(runtime),
+                sql.Identifier(current_user),
+            )
+        )
+        conn.execute(sql.SQL("DROP ROLE IF EXISTS {}").format(sql.Identifier(runtime)))
+
+
+def test_runtime_role_rejects_public_column_privilege_bypass(db):
+    conn, schema = db
+    privilege = conn.execute(
+        """
+        SELECT rolsuper OR rolcreaterole
+        FROM pg_catalog.pg_roles
+        WHERE rolname = current_user
+        """
+    ).fetchone()[0]
+    if not privilege:
+        pytest.skip("test database user needs SUPERUSER or CREATEROLE for role qualification")
+
+    runtime = f"fuckup_runtime_{uuid4().hex[:16]}"
+
+    try:
+        conn.execute(sql.SQL("CREATE ROLE {} NOLOGIN").format(sql.Identifier(runtime)))
+        conn.execute(
+            sql.SQL("GRANT UPDATE (current_revision) ON {}.corrections TO PUBLIC").format(
+                sql.Identifier(schema)
+            )
+        )
+
+        with pytest.raises(psycopg.Error, match="retains forbidden effective privileges"):
+            conn.execute("SELECT configure_fuckup_runtime_role(%s::name)", (runtime,))
+    finally:
+        conn.execute(
+            sql.SQL("REVOKE UPDATE (current_revision) ON {}.corrections FROM PUBLIC").format(
+                sql.Identifier(schema)
+            )
+        )
+        conn.execute(sql.SQL("DROP ROLE IF EXISTS {}").format(sql.Identifier(runtime)))
