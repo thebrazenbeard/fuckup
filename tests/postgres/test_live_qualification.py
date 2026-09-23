@@ -805,3 +805,57 @@ def test_binding_reactivation_and_expiry_extension_are_rejected(db):
     conn.execute("UPDATE injection_bindings SET active = false WHERE id = %s", (binding,))
     with pytest.raises(psycopg.Error, match="reactivation"):
         conn.execute("UPDATE injection_bindings SET active = true WHERE id = %s", (binding,))
+
+
+def test_runtime_role_cannot_create_injection_binding(db):
+    conn, _schema = db
+    privilege = conn.execute(
+        """
+        SELECT rolsuper OR rolcreaterole
+        FROM pg_catalog.pg_roles
+        WHERE rolname = current_user
+        """
+    ).fetchone()[0]
+    if not privilege:
+        pytest.skip("test database user needs SUPERUSER or CREATEROLE for runtime-role qualification")
+
+    runtime = f"fuckup_runtime_{uuid4().hex[:16]}"
+    current_user = conn.execute("SELECT current_user").fetchone()[0]
+    incident, correction, qualification, promotion, binding, *_ = _ids()
+
+    try:
+        conn.execute(sql.SQL("CREATE ROLE {} NOLOGIN").format(sql.Identifier(runtime)))
+        conn.execute("SELECT configure_fuckup_runtime_role(%s::name)", (runtime,))
+        conn.execute(
+            sql.SQL("GRANT {} TO {}").format(
+                sql.Identifier(runtime),
+                sql.Identifier(current_user),
+            )
+        )
+
+        _incident(conn, incident)
+        _correction(conn, incident, correction, digest="sha256:a")
+        _qualification(conn, qualification, correction, 1, "sha256:a")
+        _promotion(conn, promotion, correction, 1, "sha256:a", qualification)
+
+        conn.execute(sql.SQL("SET ROLE {}").format(sql.Identifier(runtime)))
+        with pytest.raises(psycopg.errors.InsufficientPrivilege):
+            conn.execute(
+                """
+                INSERT INTO injection_bindings(
+                    id, promotion_id, adapter, selector, selector_digest
+                )
+                VALUES (%s,%s,'prompt','{"agent":"demo"}'::jsonb,'sha256:runtime')
+                """,
+                (binding, promotion),
+            )
+    finally:
+        conn.execute("RESET ROLE")
+        conn.execute(sql.SQL("DROP OWNED BY {}").format(sql.Identifier(runtime)))
+        conn.execute(
+            sql.SQL("REVOKE {} FROM {}").format(
+                sql.Identifier(runtime),
+                sql.Identifier(current_user),
+            )
+        )
+        conn.execute(sql.SQL("DROP ROLE IF EXISTS {}").format(sql.Identifier(runtime)))
