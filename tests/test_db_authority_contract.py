@@ -132,3 +132,9 @@ def test_generic_runtime_cannot_create_promotions():
 def test_binding_guard_functions_are_security_definer_hardened():
     assert "'validate_injection_binding_insert()'" in AUTHORITY
     assert "'protect_injection_binding_mutation()'" in AUTHORITY
+
+
+def test_generic_runtime_cannot_create_bindings():
+    assert "GRANT INSERT (id, promotion_id, adapter, selector" not in AUTHORITY
+    assert "Binding creation is also a protected authorization effect" in AUTHORITY
+    assert "'injection_bindings'), 'INSERT'" in AUTHORITY
