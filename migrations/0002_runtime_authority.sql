@@ -260,10 +260,9 @@ BEGIN
         s, p_role
     );
 
-    EXECUTE format(
-        'GRANT INSERT (id, promotion_id, adapter, selector, selector_digest, priority, conflict_policy, expires_at) ON %I.injection_bindings TO %I',
-        s, p_role
-    );
+    -- Binding creation is also a protected authorization effect because
+    -- adapter/priority/conflict semantics can change which correction wins.
+    -- Runtime may only reduce an existing binding's effect.
     EXECUTE format(
         'GRANT UPDATE (active, expires_at) ON %I.injection_bindings TO %I',
         s, p_role
@@ -336,6 +335,9 @@ BEGIN
           )
        OR pg_catalog.has_any_column_privilege(
             p_role, pg_catalog.format('%I.%I', s, 'promotions'), 'INSERT'
+          )
+       OR pg_catalog.has_any_column_privilege(
+            p_role, pg_catalog.format('%I.%I', s, 'injection_bindings'), 'INSERT'
           )
        OR pg_catalog.has_any_column_privilege(
             p_role, pg_catalog.format('%I.%I', s, 'outbox'), 'INSERT'
