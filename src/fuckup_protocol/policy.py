@@ -29,6 +29,8 @@ class StrictPromotionPolicy:
         reasons: list[str] = []
         actions: list[str] = []
 
+        if not context.validation.matches_correction(context.correction):
+            reasons.append("validation report does not bind to this exact correction")
         if context.ambiguous:
             reasons.append("root cause remains materially ambiguous")
         if not context.root_cause_supported:
