@@ -5,7 +5,8 @@ AUTHORITY = Path("migrations/0003_promotion_authority.sql").read_text()
 
 
 def test_runtime_cannot_directly_create_or_broaden_protected_effects():
-    assert "runtime may prepare and qualify, but may not create/broaden protected effects" in AUTHORITY
+    assert "cannot create, broaden, revoke, or" in AUTHORITY
+    assert "otherwise mutate published promotion/binding authority" in AUTHORITY
     assert "REVOKE INSERT (id, correction_id" in AUTHORITY
     assert "REVOKE INSERT (id, promotion_id" in AUTHORITY
     assert "retains protected promotion/binding DML authority" in AUTHORITY
@@ -19,6 +20,8 @@ def test_distinct_authorizer_role_is_source_controlled():
         "already bound to incompatible authority kind",
         "create_authorized_promotion",
         "create_injection_binding",
+        "revoke_promotion",
+        "restrict_injection_binding",
     ]:
         assert token in AUTHORITY
 
