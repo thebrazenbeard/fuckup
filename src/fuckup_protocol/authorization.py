@@ -43,7 +43,7 @@ def authorize_promotion(
 
     validation = ValidationReport.evaluate(correction, qualification)
     evaluator = policy or StrictPromotionPolicy()
-    resolved_policy_name = policy_name or evaluator.__class__.__name__
+    resolved_policy_name = evaluator.__class__.__name__ if policy_name is None else policy_name
     if not resolved_policy_name.strip():
         raise ValueError("policy_name must not be empty")
     if not policy_version.strip():
