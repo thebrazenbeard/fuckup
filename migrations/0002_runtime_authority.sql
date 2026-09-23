@@ -291,7 +291,7 @@ BEGIN
             p_role, pg_catalog.format('%I.%I', s, 'events'), 'UPDATE'
           )
        OR pg_catalog.has_table_privilege(
-            p_role, pg_catalog.format('%I.%I', s, 'events'), 'DELETE'
+            p_role, pg_catalog.format('%I.%I', s, 'events'), 'DELETE, TRUNCATE'
           )
        OR pg_catalog.has_any_column_privilege(
             p_role, pg_catalog.format('%I.%I', s, 'outbox'), 'INSERT'
@@ -300,10 +300,77 @@ BEGIN
             p_role, pg_catalog.format('%I.%I', s, 'outbox'), 'UPDATE'
           )
        OR pg_catalog.has_table_privilege(
-            p_role, pg_catalog.format('%I.%I', s, 'outbox'), 'DELETE'
+            p_role, pg_catalog.format('%I.%I', s, 'outbox'), 'DELETE, TRUNCATE'
           )
        OR pg_catalog.has_any_column_privilege(
             p_role, pg_catalog.format('%I.%I', s, 'worker_jobs'), 'UPDATE'
+          )
+       OR pg_catalog.has_any_column_privilege(
+            p_role, pg_catalog.format('%I.%I', s, 'incidents'), 'UPDATE'
+          )
+       OR pg_catalog.has_any_column_privilege(
+            p_role, pg_catalog.format('%I.%I', s, 'correction_revisions'), 'UPDATE'
+          )
+       OR pg_catalog.has_any_column_privilege(
+            p_role, pg_catalog.format('%I.%I', s, 'qualifications'), 'UPDATE'
+          )
+       OR EXISTS (
+            SELECT 1
+              FROM (
+                    VALUES
+                        ('incidents', 'first_seen_at', 'INSERT'),
+                        ('incidents', 'last_seen_at', 'INSERT'),
+                        ('incidents', 'occurrence_count', 'INSERT'),
+                        ('incidents', 'status', 'INSERT'),
+                        ('root_cause_candidates', 'created_at', 'INSERT'),
+                        ('corrections', 'current_revision', 'INSERT'),
+                        ('corrections', 'status', 'INSERT'),
+                        ('corrections', 'created_at', 'INSERT'),
+                        ('correction_revisions', 'created_at', 'INSERT'),
+                        ('qualifications', 'finished_at', 'INSERT'),
+                        ('promotions', 'activated_at', 'INSERT'),
+                        ('promotions', 'revoked_at', 'INSERT'),
+                        ('injection_bindings', 'active', 'INSERT'),
+                        ('injection_bindings', 'created_at', 'INSERT'),
+                        ('worker_jobs', 'status', 'INSERT'),
+                        ('worker_jobs', 'attempts', 'INSERT'),
+                        ('worker_jobs', 'locked_by', 'INSERT'),
+                        ('worker_jobs', 'locked_at', 'INSERT'),
+                        ('worker_jobs', 'lease_expires_at', 'INSERT'),
+                        ('worker_jobs', 'last_error', 'INSERT'),
+                        ('worker_jobs', 'created_at', 'INSERT'),
+                        ('worker_jobs', 'updated_at', 'INSERT'),
+                        ('root_cause_candidates', 'id', 'UPDATE'),
+                        ('root_cause_candidates', 'incident_id', 'UPDATE'),
+                        ('root_cause_candidates', 'created_at', 'UPDATE'),
+                        ('promotions', 'id', 'UPDATE'),
+                        ('promotions', 'correction_id', 'UPDATE'),
+                        ('promotions', 'correction_revision', 'UPDATE'),
+                        ('promotions', 'exact_subject_digest', 'UPDATE'),
+                        ('promotions', 'qualification_id', 'UPDATE'),
+                        ('promotions', 'qualification_result', 'UPDATE'),
+                        ('promotions', 'policy_name', 'UPDATE'),
+                        ('promotions', 'policy_version', 'UPDATE'),
+                        ('promotions', 'policy_decision', 'UPDATE'),
+                        ('promotions', 'approved_by', 'UPDATE'),
+                        ('promotions', 'activation_scope', 'UPDATE'),
+                        ('promotions', 'rollback_condition', 'UPDATE'),
+                        ('promotions', 'activated_at', 'UPDATE'),
+                        ('injection_bindings', 'id', 'UPDATE'),
+                        ('injection_bindings', 'promotion_id', 'UPDATE'),
+                        ('injection_bindings', 'adapter', 'UPDATE'),
+                        ('injection_bindings', 'selector', 'UPDATE'),
+                        ('injection_bindings', 'selector_digest', 'UPDATE'),
+                        ('injection_bindings', 'priority', 'UPDATE'),
+                        ('injection_bindings', 'conflict_policy', 'UPDATE'),
+                        ('injection_bindings', 'created_at', 'UPDATE')
+              ) AS forbidden(table_name, column_name, privilege_type)
+             WHERE pg_catalog.has_column_privilege(
+                    p_role,
+                    pg_catalog.format('%I.%I', s, forbidden.table_name),
+                    forbidden.column_name,
+                    forbidden.privilege_type
+             )
           ) THEN
         RAISE EXCEPTION 'runtime role % retains forbidden effective privileges', p_role;
     END IF;

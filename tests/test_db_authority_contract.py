@@ -91,3 +91,17 @@ def test_runtime_role_rejects_broad_table_level_dml_that_would_bypass_column_sco
         "worker_jobs",
     ]:
         assert f"'{table}'), 'INSERT, UPDATE, DELETE, TRUNCATE'" in AUTHORITY
+
+
+def test_runtime_role_rejects_forbidden_column_level_privileges():
+    for token in [
+        "('corrections', 'current_revision', 'INSERT')",
+        "('corrections', 'status', 'INSERT')",
+        "('worker_jobs', 'status', 'INSERT')",
+        "('worker_jobs', 'locked_by', 'INSERT')",
+        "('root_cause_candidates', 'incident_id', 'UPDATE')",
+        "('promotions', 'policy_decision', 'UPDATE')",
+        "('injection_bindings', 'selector', 'UPDATE')",
+        "pg_catalog.has_column_privilege",
+    ]:
+        assert token in AUTHORITY
