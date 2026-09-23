@@ -41,3 +41,17 @@ def test_inactive_binding_does_not_participate():
     active = InjectionBinding("a", "c1", 1, {"model": "alpha"}, priority=1)
     inactive = InjectionBinding("b", "c2", 1, {"model": "alpha"}, priority=100, active=False)
     assert resolve_binding((inactive, active), {"model": "alpha"}) == active
+
+
+def test_binding_selector_is_frozen_after_construction():
+    raw = {"model": "alpha"}
+    binding = InjectionBinding("b1", "c1", 1, raw)
+    raw["model"] = "beta"
+    assert binding.matches({"model": "alpha"})
+    assert not binding.matches({"model": "beta"})
+
+
+def test_boolean_selector_does_not_match_numeric_context():
+    binding = InjectionBinding("b1", "c1", 1, {"enabled": True})
+    assert binding.matches({"enabled": True})
+    assert not binding.matches({"enabled": 1})
