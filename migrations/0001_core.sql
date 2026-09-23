@@ -545,6 +545,6 @@ WHERE ib.active = true
   AND p.revoked_at IS NULL
   AND (ib.expires_at IS NULL OR ib.expires_at > now())
   AND c.current_revision = p.correction_revision
-  AND c.status NOT IN ('SUPERSEDED', 'REVOKED', 'REJECTED');
+  AND c.status = 'ACTIVE';
 
 COMMIT;
