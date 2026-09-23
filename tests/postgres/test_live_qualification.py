@@ -15,6 +15,7 @@ from psycopg import ClientCursor, sql  # noqa: E402
 MIGRATIONS = (
     Path("migrations/0001_core.sql").read_text(),
     Path("migrations/0002_runtime_authority.sql").read_text(),
+    Path("migrations/0003_authorization_continuity.sql").read_text(),
 )
 
 
@@ -83,33 +84,29 @@ def _qualification(conn, qualification_id, correction_id, revision, digest, *, r
     )
 
 
-def _promotion(conn, promotion_id, correction_id, revision, digest, qualification_id, *, allow=True, activated_at=None):
-    activated_sql = "%s" if activated_at is not None else "now()"
-    params = [
-        promotion_id,
-        correction_id,
-        revision,
-        digest,
-        qualification_id,
-        "policy-v1",
-        "1",
-        '{"allow": true}' if allow else '{"allow": false}',
-        '{"agent":"demo"}',
-        '{"action":"revoke"}',
-    ]
-    if activated_at is not None:
-        params.append(activated_at)
+def _promotion(conn, promotion_id, correction_id, revision, digest, qualification_id, *, allow=True):
+    authorization_id = str(uuid4())
     conn.execute(
-        f"""
-        INSERT INTO promotions(
-            id, correction_id, correction_revision, exact_subject_digest,
-            qualification_id, policy_name, policy_version, policy_decision,
-            activation_scope, rollback_condition, activated_at
+        """
+        SELECT id
+        FROM authorize_and_promote(
+            %s, %s, %s, %s, %s, %s,
+            'policy-v1', '1', %s::jsonb,
+            '{"agent":"demo"}'::jsonb,
+            '{"action":"revoke"}'::jsonb,
+            true, false, false
         )
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s::jsonb, %s::jsonb, {activated_sql})
         """,
-        tuple(params),
-    )
+        (
+            authorization_id,
+            promotion_id,
+            correction_id,
+            revision,
+            digest,
+            qualification_id,
+            '{"allow": true}' if allow else '{"allow": false}',
+        ),
+    ).fetchone()
 
 
 def test_01_migration_applies(db):
@@ -691,3 +688,185 @@ def test_runtime_role_rejects_database_create_privilege(db):
             )
         )
         conn.execute(sql.SQL("DROP ROLE IF EXISTS {}").format(sql.Identifier(runtime)))
+
+
+def test_runtime_cannot_fabricate_promotion_or_binding_authority(db):
+    conn, schema = db
+    privilege = conn.execute(
+        """
+        SELECT rolsuper OR rolcreaterole
+        FROM pg_catalog.pg_roles
+        WHERE rolname = current_user
+        """
+    ).fetchone()[0]
+    if not privilege:
+        pytest.skip("test database user needs SUPERUSER or CREATEROLE for authority-role qualification")
+
+    runtime = f"fuckup_runtime_{uuid4().hex[:16]}"
+    authorizer = f"fuckup_authorizer_{uuid4().hex[:16]}"
+    current_user = conn.execute("SELECT current_user").fetchone()[0]
+    incident, correction, qualification, promotion, binding, authorization, *_ = _ids()
+
+    try:
+        conn.execute(sql.SQL("CREATE ROLE {} NOLOGIN").format(sql.Identifier(runtime)))
+        conn.execute(sql.SQL("CREATE ROLE {} NOLOGIN").format(sql.Identifier(authorizer)))
+        conn.execute("SELECT configure_fuckup_runtime_role(%s::name)", (runtime,))
+        conn.execute("SELECT configure_fuckup_authorizer_role(%s::name)", (authorizer,))
+        conn.execute(
+            sql.SQL("GRANT {}, {} TO {}").format(
+                sql.Identifier(runtime),
+                sql.Identifier(authorizer),
+                sql.Identifier(current_user),
+            )
+        )
+
+        _incident(conn, incident)
+        _correction(conn, incident, correction, digest="sha256:a")
+        _qualification(conn, qualification, correction, 1, "sha256:a")
+
+        conn.execute(sql.SQL("SET ROLE {}").format(sql.Identifier(runtime)))
+        with pytest.raises(psycopg.errors.InsufficientPrivilege):
+            conn.execute(
+                """
+                INSERT INTO promotions(
+                    id, correction_id, correction_revision, exact_subject_digest,
+                    qualification_id, qualification_result, policy_name, policy_version,
+                    policy_decision, activation_scope, rollback_condition
+                )
+                VALUES (
+                    %s, %s, 1, 'sha256:a', %s, 'PASS', 'fake', '1',
+                    '{"allow":true}'::jsonb, '{"agent":"demo"}'::jsonb,
+                    '{"action":"revoke"}'::jsonb
+                )
+                """,
+                (promotion, correction, qualification),
+            )
+        with pytest.raises(psycopg.errors.InsufficientPrivilege):
+            conn.execute(
+                """
+                SELECT * FROM authorize_and_promote(
+                    %s,%s,%s,1,'sha256:a',%s,'fake','1',
+                    '{"allow":true}'::jsonb,'{"agent":"demo"}'::jsonb,
+                    '{"action":"revoke"}'::jsonb,true,false,false
+                )
+                """,
+                (authorization, promotion, correction, qualification),
+            ).fetchall()
+
+        conn.execute("RESET ROLE")
+        conn.execute(sql.SQL("SET ROLE {}").format(sql.Identifier(authorizer)))
+        created = conn.execute(
+            """
+            SELECT id
+            FROM authorize_and_promote(
+                %s,%s,%s,1,'sha256:a',%s,'policy-v1','1',
+                '{"allow":true}'::jsonb,'{"agent":"demo"}'::jsonb,
+                '{"action":"revoke"}'::jsonb,true,false,false
+            )
+            """,
+            (authorization, promotion, correction, qualification),
+        ).fetchone()[0]
+        assert created == promotion
+
+        with pytest.raises(psycopg.Error, match="equal to or narrower"):
+            conn.execute(
+                """
+                SELECT * FROM create_authorized_binding(
+                    %s,%s,'memory','{"model":"other"}'::jsonb,
+                    'sha256:broad',0,'FAIL_CLOSED',NULL
+                )
+                """,
+                (binding, promotion),
+            ).fetchall()
+
+        created_binding = conn.execute(
+            """
+            SELECT id
+            FROM create_authorized_binding(
+                %s,%s,'memory','{"agent":"demo","task":"code"}'::jsonb,
+                'sha256:narrow',0,'FAIL_CLOSED',now() + interval '2 hours'
+            )
+            """,
+            (binding, promotion),
+        ).fetchone()[0]
+        assert created_binding == binding
+
+        conn.execute("RESET ROLE")
+        conn.execute(sql.SQL("SET ROLE {}").format(sql.Identifier(runtime)))
+
+        with pytest.raises(psycopg.errors.InsufficientPrivilege):
+            conn.execute(
+                """
+                INSERT INTO injection_bindings(
+                    id,promotion_id,adapter,selector,selector_digest
+                )
+                VALUES (%s,%s,'memory','{"agent":"demo"}'::jsonb,'sha256:direct')
+                """,
+                (str(uuid4()), promotion),
+            )
+
+        narrowed_expiry = conn.execute(
+            """
+            SELECT expires_at
+            FROM restrict_injection_binding(%s,false,now() + interval '1 hour')
+            """,
+            (binding,),
+        ).fetchone()[0]
+        assert narrowed_expiry is not None
+
+        with pytest.raises(psycopg.Error, match="only move earlier"):
+            conn.execute(
+                """
+                SELECT * FROM restrict_injection_binding(
+                    %s,false,now() + interval '90 minutes'
+                )
+                """,
+                (binding,),
+            ).fetchall()
+
+        conn.execute(
+            "SELECT id FROM restrict_injection_binding(%s,true,NULL)",
+            (binding,),
+        ).fetchone()
+
+        with pytest.raises(psycopg.errors.InsufficientPrivilege):
+            conn.execute(
+                "UPDATE injection_bindings SET active = true WHERE id = %s",
+                (binding,),
+            )
+    finally:
+        conn.execute("RESET ROLE")
+        for role in (runtime, authorizer):
+            conn.execute(sql.SQL("DROP OWNED BY {}").format(sql.Identifier(role)))
+        conn.execute(
+            sql.SQL("REVOKE {}, {} FROM {}").format(
+                sql.Identifier(runtime),
+                sql.Identifier(authorizer),
+                sql.Identifier(current_user),
+            )
+        )
+        for role in (runtime, authorizer):
+            conn.execute(sql.SQL("DROP ROLE IF EXISTS {}").format(sql.Identifier(role)))
+
+
+def test_same_role_cannot_be_runtime_and_authorizer(db):
+    conn, _schema = db
+    privilege = conn.execute(
+        """
+        SELECT rolsuper OR rolcreaterole
+        FROM pg_catalog.pg_roles
+        WHERE rolname = current_user
+        """
+    ).fetchone()[0]
+    if not privilege:
+        pytest.skip("test database user needs SUPERUSER or CREATEROLE for authority-role qualification")
+
+    role = f"fuckup_role_{uuid4().hex[:16]}"
+    try:
+        conn.execute(sql.SQL("CREATE ROLE {} NOLOGIN").format(sql.Identifier(role)))
+        conn.execute("SELECT configure_fuckup_runtime_role(%s::name)", (role,))
+        with pytest.raises(psycopg.Error, match="already assigned as RUNTIME authority"):
+            conn.execute("SELECT configure_fuckup_authorizer_role(%s::name)", (role,))
+    finally:
+        conn.execute(sql.SQL("DROP OWNED BY {}").format(sql.Identifier(role)))
+        conn.execute(sql.SQL("DROP ROLE IF EXISTS {}").format(sql.Identifier(role)))
