@@ -4,6 +4,7 @@ import hashlib
 import json
 from dataclasses import dataclass
 
+from .contracts import JsonObject, freeze_json_object, is_nonempty_json_object, thaw_json
 from .models import CorrectionRevision, PolicyDecision, QualificationResult
 from .policy import PromotionContext, PromotionPolicy, StrictPromotionPolicy
 from .scope import SelectorScope, freeze_selector_scope, is_selector_scope
@@ -15,7 +16,9 @@ class PromotionAuthorization:
     validation: ValidationReport
     decision: PolicyDecision
     activation_scope: SelectorScope | None
-    rollback_condition: str | None
+    rollback_condition: JsonObject | None
+    policy_name: str
+    policy_version: str
     authorization_ref: str | None
 
 
@@ -26,9 +29,11 @@ def authorize_promotion(
     root_cause_supported: bool,
     ambiguous: bool,
     activation_scope: SelectorScope | None,
-    rollback_condition: str | None,
+    rollback_condition: JsonObject | None,
     irreversible_acknowledged: bool = False,
     policy: PromotionPolicy | None = None,
+    policy_name: str | None = None,
+    policy_version: str = "1",
 ) -> PromotionAuthorization:
     """Recompute validation and policy at the authorization boundary.
 
@@ -38,6 +43,12 @@ def authorize_promotion(
 
     validation = ValidationReport.evaluate(correction, qualification)
     evaluator = policy or StrictPromotionPolicy()
+    resolved_policy_name = policy_name or evaluator.__class__.__name__
+    if not resolved_policy_name.strip():
+        raise ValueError("policy_name must not be empty")
+    if not policy_version.strip():
+        raise ValueError("policy_version must not be empty")
+
     decision = evaluator.evaluate(
         PromotionContext(
             correction=correction,
@@ -51,10 +62,17 @@ def authorize_promotion(
     )
 
     frozen_scope = freeze_selector_scope(activation_scope) if is_selector_scope(activation_scope) else None
+    frozen_rollback = (
+        freeze_json_object(rollback_condition, require_nonempty=True)
+        if is_nonempty_json_object(rollback_condition)
+        else None
+    )
     authorization_ref: str | None = None
     if decision.allow:
         if frozen_scope is None:
             raise RuntimeError("allowing policy returned without a valid selector-shaped activation scope")
+        if frozen_rollback is None:
+            raise RuntimeError("allowing policy returned without a valid rollback JSON object")
         artifact = {
             "correction_id": correction.correction_id,
             "correction_revision": correction.revision,
@@ -81,6 +99,8 @@ def authorize_promotion(
                 ),
             },
             "policy": {
+                "name": resolved_policy_name,
+                "version": policy_version,
                 "implementation": f"{evaluator.__class__.__module__}.{evaluator.__class__.__qualname__}",
                 "allow": decision.allow,
                 "reasons": list(decision.reasons),
@@ -90,7 +110,7 @@ def authorize_promotion(
                 "irreversible_acknowledged": irreversible_acknowledged,
             },
             "activation_scope": dict(frozen_scope),
-            "rollback_condition": rollback_condition,
+            "rollback_condition": thaw_json(frozen_rollback),
         }
         encoded = json.dumps(
             artifact,
@@ -104,6 +124,8 @@ def authorize_promotion(
         validation=validation,
         decision=decision,
         activation_scope=frozen_scope,
-        rollback_condition=rollback_condition,
+        rollback_condition=frozen_rollback,
+        policy_name=resolved_policy_name,
+        policy_version=policy_version,
         authorization_ref=authorization_ref,
     )
