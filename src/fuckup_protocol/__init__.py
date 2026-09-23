@@ -23,6 +23,7 @@ __all__ = [
     "JobStatus",
     "PluginRegistry",
     "PolicyDecision",
+    "PromotionAuthorization",
     "PromotionContext",
     "PromotionPolicy",
     "PromotionRejectedError",
