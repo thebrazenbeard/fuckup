@@ -116,7 +116,8 @@ CREATE TABLE promotions (
     activated_at timestamptz NOT NULL DEFAULT now(),
     revoked_at timestamptz,
     FOREIGN KEY (qualification_id, correction_id, correction_revision, exact_subject_digest, qualification_result)
-        REFERENCES qualifications(id, correction_id, correction_revision, exact_subject_digest, result)
+        REFERENCES qualifications(id, correction_id, correction_revision, exact_subject_digest, result),
+    UNIQUE (correction_id, correction_revision)
 );
 
 CREATE TABLE injection_bindings (
@@ -200,6 +201,7 @@ DECLARE
     expected_revision integer;
     root_incident uuid;
     superseded_incident uuid;
+    superseded_current_revision integer;
     cycle_found boolean;
 BEGIN
     SELECT incident_id, current_revision + 1
@@ -231,12 +233,19 @@ BEGIN
             RAISE EXCEPTION 'a correction cannot supersede itself';
         END IF;
 
-        SELECT incident_id INTO superseded_incident
+        SELECT incident_id, current_revision
+          INTO superseded_incident, superseded_current_revision
           FROM corrections
-         WHERE id = NEW.supersedes_correction_id;
+         WHERE id = NEW.supersedes_correction_id
+         FOR UPDATE;
 
         IF superseded_incident IS DISTINCT FROM correction_incident THEN
             RAISE EXCEPTION 'supersession must remain within one incident';
+        END IF;
+
+        IF NEW.supersedes_revision <> superseded_current_revision THEN
+            RAISE EXCEPTION 'supersession must target current revision % of correction %',
+                superseded_current_revision, NEW.supersedes_correction_id;
         END IF;
 
         WITH RECURSIVE chain(correction_id) AS (
