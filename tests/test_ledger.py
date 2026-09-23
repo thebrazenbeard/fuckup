@@ -2,7 +2,7 @@ import itertools
 
 import pytest
 
-from fuckup_protocol.ledger import InMemoryLedger, PromotionRejectedError, StaleQualificationError
+from fuckup_protocol.ledger import IdempotencyCollisionError, InMemoryLedger, PromotionRejectedError, StaleQualificationError
 from fuckup_protocol.models import PolicyDecision, QualificationResult, TestResult
 from fuckup_protocol.validation import TestKind
 
@@ -37,15 +37,44 @@ def test_duplicate_incident_collapses_but_preserves_occurrence_count():
     assert second.occurrence_count == 2
 
 
-def test_event_idempotency_returns_existing_event():
+def test_event_idempotency_returns_existing_event_for_same_effect():
     ledger = InMemoryLedger(id_factory=_ids())
     incident, _ = ledger.submit_incident(fingerprint="fp", fingerprint_version="v1", payload={})
-    first, duplicate = ledger.append_event(incident_id=incident.id, event_type="flagged", payload={}, idempotency_key="evt-1")
-    second, duplicate2 = ledger.append_event(incident_id=incident.id, event_type="flagged", payload={"ignored": True}, idempotency_key="evt-1")
+    first, duplicate = ledger.append_event(
+        incident_id=incident.id,
+        event_type="flagged",
+        payload={"value": 1},
+        idempotency_key="evt-1",
+    )
+    second, duplicate2 = ledger.append_event(
+        incident_id=incident.id,
+        event_type="flagged",
+        payload={"value": 1},
+        idempotency_key="evt-1",
+    )
 
     assert not duplicate
     assert duplicate2
     assert first == second
+
+
+def test_event_idempotency_reuse_for_different_effect_is_collision():
+    ledger = InMemoryLedger(id_factory=_ids())
+    incident, _ = ledger.submit_incident(fingerprint="fp", fingerprint_version="v1", payload={})
+    ledger.append_event(
+        incident_id=incident.id,
+        event_type="flagged",
+        payload={"value": 1},
+        idempotency_key="evt-1",
+    )
+
+    with pytest.raises(IdempotencyCollisionError):
+        ledger.append_event(
+            incident_id=incident.id,
+            event_type="flagged",
+            payload={"value": 2},
+            idempotency_key="evt-1",
+        )
 
 
 def test_old_qualification_becomes_stale_after_revision_change():
@@ -102,3 +131,35 @@ def test_revocation_preserves_promotion_identity_and_history_reference():
     assert revoked.id == promotion.id
     assert revoked.correction_id == promotion.correction_id
     assert revoked.revoked_at is not None
+
+
+def test_failed_qualification_cannot_promote_even_with_allow_policy():
+    ledger = InMemoryLedger(id_factory=_ids())
+    incident, _ = ledger.submit_incident(fingerprint="fp", fingerprint_version="v1", payload={})
+    correction = ledger.create_correction(incident_id=incident.id, payload={"rule": "v1"})
+    tests = tuple(
+        TestResult(
+            kind=kind.value,
+            name=kind.value.lower(),
+            passed=kind != TestKind.RETAIN,
+        )
+        for kind in [TestKind.MFT, TestKind.CONTRAST, TestKind.TRANSFER, TestKind.RETAIN, TestKind.ANTI_TRIGGER]
+    )
+    qualification = QualificationResult(
+        correction_id=correction.correction_id,
+        correction_revision=correction.revision,
+        exact_subject_digest=correction.subject_digest,
+        suite_version="suite-v1",
+        tests=tests,
+    )
+    ledger.record_qualification("q-fail", qualification)
+
+    with pytest.raises(PromotionRejectedError):
+        ledger.promote(
+            correction_id=correction.correction_id,
+            correction_revision=correction.revision,
+            qualification_id="q-fail",
+            activation_scope="agent:demo",
+            rollback_condition="revoke on regression",
+            policy_decision=PolicyDecision(allow=True),
+        )
