@@ -63,14 +63,13 @@ This document records source-level remediation only. It does not claim live Post
 - RUNNING requires non-null owner, lock timestamp, and lease.
 - all non-RUNNING states require those fields to be null.
 
-### 9. Idempotency key not bound to effect — repaired in reference semantics / schema contract
+### 9. Idempotency key not bound to effect — repaired in source
 
 - events and worker jobs pair idempotency key presence with effect digest presence.
 - Python ledger computes an effect digest over incident + event type + payload.
 - same key + same effect returns the existing event.
 - same key + different effect raises `IdempotencyCollisionError`.
-
-A future PostgreSQL helper should provide the same convenient "same effect returns existing row" behavior instead of relying only on unique-key collision at raw INSERT level.
+- PostgreSQL `record_event_idempotent()` provides the same semantic contract, including a concurrent unique-key race path that re-reads and accepts only the same effect digest.
 
 ### 10. Outbox existed without atomic path — repaired for key lifecycle effects
 
