@@ -237,7 +237,10 @@ BEGIN
      FOR SHARE;
 
     IF FOUND THEN
-        IF existing.effect_digest IS DISTINCT FROM p_effect_digest THEN
+        IF existing.incident_id IS DISTINCT FROM p_incident_id
+           OR existing.event_type IS DISTINCT FROM p_event_type
+           OR existing.payload IS DISTINCT FROM COALESCE(p_payload, '{}'::jsonb)
+           OR existing.effect_digest IS DISTINCT FROM p_effect_digest THEN
             RAISE EXCEPTION 'idempotency key collision for a different event effect';
         END IF;
         RETURN NEXT existing;
@@ -263,7 +266,10 @@ BEGIN
          WHERE idempotency_key = p_idempotency_key
          FOR SHARE;
 
-        IF existing.effect_digest IS DISTINCT FROM p_effect_digest THEN
+        IF existing.incident_id IS DISTINCT FROM p_incident_id
+           OR existing.event_type IS DISTINCT FROM p_event_type
+           OR existing.payload IS DISTINCT FROM COALESCE(p_payload, '{}'::jsonb)
+           OR existing.effect_digest IS DISTINCT FROM p_effect_digest THEN
             RAISE EXCEPTION 'idempotency key collision for a different event effect';
         END IF;
         RETURN NEXT existing;
@@ -275,20 +281,25 @@ $$ LANGUAGE plpgsql;
 CREATE FUNCTION validate_correction_revision_insert() RETURNS trigger AS $$
 DECLARE
     correction_incident uuid;
+    correction_status text;
     expected_revision integer;
     root_incident uuid;
     superseded_incident uuid;
     superseded_current_revision integer;
     cycle_found boolean;
 BEGIN
-    SELECT incident_id, current_revision + 1
-      INTO correction_incident, expected_revision
+    SELECT incident_id, status, current_revision + 1
+      INTO correction_incident, correction_status, expected_revision
       FROM corrections
      WHERE id = NEW.correction_id
      FOR UPDATE;
 
     IF correction_incident IS NULL THEN
         RAISE EXCEPTION 'unknown correction %', NEW.correction_id;
+    END IF;
+
+    IF correction_status IN ('SUPERSEDED', 'REVOKED', 'REJECTED') THEN
+        RAISE EXCEPTION 'terminal correction status % cannot accept a new revision', correction_status;
     END IF;
 
     IF NEW.revision <> expected_revision THEN
@@ -352,7 +363,8 @@ $$ LANGUAGE plpgsql;
 CREATE FUNCTION apply_correction_revision_insert() RETURNS trigger AS $$
 BEGIN
     UPDATE corrections
-       SET current_revision = NEW.revision
+       SET current_revision = NEW.revision,
+           status = 'CORRECTION_PROPOSED'
      WHERE id = NEW.correction_id;
 
     IF NEW.supersedes_correction_id IS NOT NULL THEN
