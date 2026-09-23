@@ -431,6 +431,7 @@ def test_runtime_role_cannot_rewrite_authoritative_projection_or_bypass_event_gu
         assert guarded == event
     finally:
         conn.execute("RESET ROLE")
+        conn.execute(sql.SQL("DROP OWNED BY {}").format(sql.Identifier(role)))
         conn.execute(
             sql.SQL("REVOKE {} FROM {}").format(
                 sql.Identifier(role),
@@ -537,6 +538,7 @@ def test_configured_runtime_role_can_use_guarded_worker_lifecycle(db):
         assert failed == (job_fail, "DEAD_LETTERED")
     finally:
         conn.execute("RESET ROLE")
+        conn.execute(sql.SQL("DROP OWNED BY {}").format(sql.Identifier(runtime)))
         conn.execute(
             sql.SQL("REVOKE {} FROM {}").format(
                 sql.Identifier(runtime),
