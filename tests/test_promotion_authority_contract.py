@@ -4,12 +4,14 @@ from pathlib import Path
 AUTHORITY = Path("migrations/0003_promotion_authority.sql").read_text()
 
 
-def test_runtime_cannot_directly_create_or_broaden_protected_effects():
+def test_runtime_cannot_mutate_published_promotion_or_binding_authority():
     assert "cannot create, broaden, revoke, or" in AUTHORITY
     assert "otherwise mutate published promotion/binding authority" in AUTHORITY
-    assert "REVOKE INSERT (id, correction_id" in AUTHORITY
-    assert "REVOKE INSERT (id, promotion_id" in AUTHORITY
-    assert "retains protected promotion/binding DML authority" in AUTHORITY
+    runtime_body = AUTHORITY.split(
+        "CREATE FUNCTION configure_fuckup_runtime_role(p_role name)", 1
+    )[1].split("CREATE FUNCTION configure_fuckup_authorizer_role(p_role name)", 1)[0]
+    assert "GRANT EXECUTE ON FUNCTION" not in runtime_body
+    assert "retains protected promotion/binding DML authority" in runtime_body
 
 
 def test_distinct_authorizer_role_is_source_controlled():
@@ -72,3 +74,10 @@ def test_new_binding_requires_current_active_promotion():
         "cannot create a binding for stale or inactive promotion",
     ]:
         assert token in AUTHORITY
+
+
+
+def test_promotion_authority_plpgsql_delimiters_are_balanced():
+    assert AUTHORITY.count("$$") % 2 == 0
+    assert AUTHORITY.startswith("BEGIN;")
+    assert AUTHORITY.rstrip().endswith("COMMIT;")
