@@ -70,3 +70,8 @@ def test_runtime_role_effective_forbidden_privileges_are_verified():
     assert "pg_catalog.has_schema_privilege" in AUTHORITY
     assert "pg_catalog.has_table_privilege" in AUTHORITY
     assert "retains forbidden effective privileges" in AUTHORITY
+
+
+def test_authority_plpgsql_delimiters_are_balanced():
+    assert AUTHORITY.count("$$") % 2 == 0
+    assert "configure_fuckup_runtime_role(p_role name)\nRETURNS void AS $$" in AUTHORITY
