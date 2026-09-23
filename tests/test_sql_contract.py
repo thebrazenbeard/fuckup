@@ -84,3 +84,14 @@ def test_plpgsql_function_delimiters_are_balanced():
     assert MIGRATION.count("$$") % 2 == 0
     assert "RETURNS SETOF events AS $$" in MIGRATION
     assert "validate_correction_revision_insert() RETURNS trigger AS $$" in MIGRATION
+
+
+def test_postgres_idempotency_compares_effect_fields_not_digest_only():
+    assert "existing.incident_id IS DISTINCT FROM p_incident_id" in MIGRATION
+    assert "existing.event_type IS DISTINCT FROM p_event_type" in MIGRATION
+    assert "existing.payload IS DISTINCT FROM COALESCE(p_payload, '{}'::jsonb)" in MIGRATION
+
+
+def test_new_revision_resets_lifecycle_and_terminal_families_cannot_revise():
+    assert "status = 'CORRECTION_PROPOSED'" in MIGRATION
+    assert "terminal correction status % cannot accept a new revision" in MIGRATION
