@@ -31,13 +31,16 @@ def test_authorization_recomputes_validation_and_policy():
         root_cause_supported=True,
         ambiguous=False,
         activation_scope={"agent": "demo"},
-        rollback_condition="revoke on regression",
+        rollback_condition={"action": "revoke on regression"},
     )
     assert auth.validation.passed
     assert auth.decision.allow
     assert dict(auth.activation_scope) == {"agent": "demo"}
     assert auth.authorization_ref is not None
     assert auth.authorization_ref.startswith("sha256:")
+    assert dict(auth.rollback_condition) == {"action": "revoke on regression"}
+    assert auth.policy_name == "StrictPromotionPolicy"
+    assert auth.policy_version == "1"
 
 
 def test_authorization_fails_closed_on_bad_qualification():
@@ -48,7 +51,7 @@ def test_authorization_fails_closed_on_bad_qualification():
         root_cause_supported=True,
         ambiguous=False,
         activation_scope={"agent": "demo"},
-        rollback_condition="revoke on regression",
+        rollback_condition={"action": "revoke on regression"},
     )
     assert not auth.validation.passed
     assert not auth.decision.allow
@@ -63,7 +66,7 @@ def test_authorization_rejects_non_selector_activation_scope():
         root_cause_supported=True,
         ambiguous=False,
         activation_scope={"agent": {"nested": "not-allowed"}},
-        rollback_condition="revoke on regression",
+        rollback_condition={"action": "revoke on regression"},
     )
     assert not auth.decision.allow
     assert auth.activation_scope is None
@@ -80,7 +83,7 @@ def test_authorization_ref_binds_scope_and_does_not_follow_mutation():
         root_cause_supported=True,
         ambiguous=False,
         activation_scope=scope,
-        rollback_condition="revoke on regression",
+        rollback_condition={"action": "revoke on regression"},
     )
     first_ref = auth.authorization_ref
     scope["agent"] = "other"
@@ -94,7 +97,7 @@ def test_authorization_ref_binds_scope_and_does_not_follow_mutation():
         root_cause_supported=True,
         ambiguous=False,
         activation_scope={"agent": "demo", "model": "x"},
-        rollback_condition="revoke on regression",
+        rollback_condition={"action": "revoke on regression"},
     )
     assert broader.authorization_ref != first_ref
 
@@ -107,7 +110,7 @@ def test_authorization_ref_binds_rollback_condition():
         root_cause_supported=True,
         ambiguous=False,
         activation_scope={"agent": "demo"},
-        rollback_condition="revoke on regression",
+        rollback_condition={"action": "revoke on regression"},
     )
     right = authorize_promotion(
         correction=correction,
@@ -115,6 +118,6 @@ def test_authorization_ref_binds_rollback_condition():
         root_cause_supported=True,
         ambiguous=False,
         activation_scope={"agent": "demo"},
-        rollback_condition="revoke on security regression",
+        rollback_condition={"action": "revoke on security regression"},
     )
     assert left.authorization_ref != right.authorization_ref
