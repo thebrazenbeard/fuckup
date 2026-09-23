@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Protocol
 
+from .contracts import JsonObject, is_nonempty_json_object
 from .models import CorrectionRevision, PolicyDecision
 from .scope import SelectorScope, is_selector_scope
 from .validation import ValidationReport
@@ -15,7 +16,7 @@ class PromotionContext:
     root_cause_supported: bool
     ambiguous: bool
     activation_scope: SelectorScope | None
-    rollback_condition: str | None
+    rollback_condition: JsonObject | None
     irreversible_acknowledged: bool = False
 
 
@@ -42,8 +43,8 @@ class StrictPromotionPolicy:
             reasons.append("required validation did not pass")
         if not is_selector_scope(context.activation_scope):
             reasons.append("activation scope must be a non-empty flat selector of JSON scalar values")
-        if not context.rollback_condition:
-            reasons.append("rollback/revocation condition is required")
+        if not is_nonempty_json_object(context.rollback_condition):
+            reasons.append("rollback/revocation condition must be a non-empty JSON object")
         if not context.correction.reversible and not context.irreversible_acknowledged:
             reasons.append("irreversible correction requires explicit acknowledgement")
             actions.append("obtain explicit irreversible-effect approval")
