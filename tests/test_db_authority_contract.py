@@ -50,3 +50,23 @@ def test_runtime_role_uses_guarded_worker_functions():
 
 def test_security_definer_search_path_pins_trusted_schema_and_pg_temp_last():
     assert "SET search_path TO %I, pg_catalog, pg_temp" in AUTHORITY
+
+
+def test_runtime_role_must_be_isolated_leaf_without_admin_escape_hatches():
+    for token in [
+        "rolsuper",
+        "rolcreaterole",
+        "rolcreatedb",
+        "rolreplication",
+        "rolbypassrls",
+        "pg_catalog.pg_auth_members",
+        "must not be a member of another role",
+        "forbidden administrative attributes",
+    ]:
+        assert token in AUTHORITY
+
+
+def test_runtime_role_effective_forbidden_privileges_are_verified():
+    assert "pg_catalog.has_schema_privilege" in AUTHORITY
+    assert "pg_catalog.has_table_privilege" in AUTHORITY
+    assert "retains forbidden effective privileges" in AUTHORITY

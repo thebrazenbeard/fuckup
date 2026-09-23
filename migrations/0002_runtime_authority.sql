@@ -134,16 +134,43 @@ $secure_functions$ LANGUAGE plpgsql;
 -- The role must already exist. This function does not CREATE ROLE and is not
 -- executable by PUBLIC.
 CREATE FUNCTION configure_fuckup_runtime_role(p_role name)
-RETURNS void AS $$
+RETURNS void AS $
 DECLARE
     s name := current_schema();
+    runtime_oid oid;
+    runtime_superuser boolean;
+    runtime_createrole boolean;
+    runtime_createdb boolean;
+    runtime_replication boolean;
+    runtime_bypassrls boolean;
 BEGIN
-    IF NOT EXISTS (
-        SELECT 1
-          FROM pg_catalog.pg_roles
-         WHERE rolname = p_role
-    ) THEN
+    SELECT oid, rolsuper, rolcreaterole, rolcreatedb, rolreplication, rolbypassrls
+      INTO runtime_oid, runtime_superuser, runtime_createrole, runtime_createdb,
+           runtime_replication, runtime_bypassrls
+      FROM pg_catalog.pg_roles
+     WHERE rolname = p_role;
+
+    IF runtime_oid IS NULL THEN
         RAISE EXCEPTION 'runtime role % does not exist', p_role;
+    END IF;
+
+    IF runtime_superuser
+       OR runtime_createrole
+       OR runtime_createdb
+       OR runtime_replication
+       OR runtime_bypassrls THEN
+        RAISE EXCEPTION 'runtime role % has forbidden administrative attributes', p_role;
+    END IF;
+
+    -- The runtime identity must be a leaf role. Direct REVOKE statements do
+    -- not neutralize privileges inherited from parent roles or roles that can
+    -- later be assumed through SET ROLE.
+    IF EXISTS (
+        SELECT 1
+          FROM pg_catalog.pg_auth_members
+         WHERE member = runtime_oid
+    ) THEN
+        RAISE EXCEPTION 'runtime role % must not be a member of another role', p_role;
     END IF;
 
     EXECUTE format('REVOKE ALL PRIVILEGES ON SCHEMA %I FROM %I', s, p_role);
@@ -225,8 +252,39 @@ BEGIN
         'GRANT EXECUTE ON FUNCTION %I.fail_worker_job(uuid,text,jsonb,boolean,integer) TO %I',
         s, p_role
     );
+
+    -- Verify effective privileges, not merely direct grants. This catches
+    -- ownership or unexpected privilege inheritance that would defeat the
+    -- least-privilege contract.
+    IF pg_catalog.has_schema_privilege(p_role, s, 'CREATE')
+       OR pg_catalog.has_table_privilege(
+            p_role, pg_catalog.format('%I.%I', s, 'corrections'), 'UPDATE'
+          )
+       OR pg_catalog.has_table_privilege(
+            p_role, pg_catalog.format('%I.%I', s, 'events'), 'INSERT'
+          )
+       OR pg_catalog.has_table_privilege(
+            p_role, pg_catalog.format('%I.%I', s, 'events'), 'UPDATE'
+          )
+       OR pg_catalog.has_table_privilege(
+            p_role, pg_catalog.format('%I.%I', s, 'events'), 'DELETE'
+          )
+       OR pg_catalog.has_table_privilege(
+            p_role, pg_catalog.format('%I.%I', s, 'outbox'), 'INSERT'
+          )
+       OR pg_catalog.has_table_privilege(
+            p_role, pg_catalog.format('%I.%I', s, 'outbox'), 'UPDATE'
+          )
+       OR pg_catalog.has_table_privilege(
+            p_role, pg_catalog.format('%I.%I', s, 'outbox'), 'DELETE'
+          )
+       OR pg_catalog.has_table_privilege(
+            p_role, pg_catalog.format('%I.%I', s, 'worker_jobs'), 'UPDATE'
+          ) THEN
+        RAISE EXCEPTION 'runtime role % retains forbidden effective privileges', p_role;
+    END IF;
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
+$ LANGUAGE plpgsql SECURITY DEFINER;
 
 DO $secure_config$
 DECLARE

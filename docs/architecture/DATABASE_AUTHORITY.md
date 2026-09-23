@@ -82,3 +82,24 @@ The live PostgreSQL suite must prove that a configured runtime role:
 - cannot bypass promotion/revision lifecycle protections.
 
 The test remains opt-in through `FUCKUP_TEST_DATABASE_URL`.
+
+
+## Runtime role isolation
+
+The runtime role must be a clean leaf role, not merely a role whose direct
+grants happen to look narrow.
+
+`configure_fuckup_runtime_role(...)` fails closed when the supplied role:
+
+- has administrative attributes such as SUPERUSER, CREATEROLE, CREATEDB,
+  REPLICATION, or BYPASSRLS;
+- is itself a member of any parent role;
+- retains forbidden effective privileges after provisioning.
+
+The configurator intentionally does not revoke arbitrary role memberships.
+Memberships may belong to another system; operators must supply a dedicated
+runtime identity whose privilege graph is already isolated.
+
+Live qualification includes an inherited-parent-role attack case and proves the
+configured runtime can still claim, complete, and fail jobs through the guarded
+worker functions.
