@@ -12,7 +12,10 @@ psycopg = pytest.importorskip("psycopg")
 from psycopg import ClientCursor, sql  # noqa: E402
 
 
-MIGRATION = Path("migrations/0001_core.sql").read_text()
+MIGRATIONS = (
+    Path("migrations/0001_core.sql").read_text(),
+    Path("migrations/0002_runtime_authority.sql").read_text(),
+)
 
 
 @pytest.fixture()
@@ -21,7 +24,8 @@ def db():
     conn = psycopg.connect(DATABASE_URL, autocommit=True, cursor_factory=ClientCursor)
     conn.execute(sql.SQL("CREATE SCHEMA {}").format(sql.Identifier(schema)))
     conn.execute(sql.SQL("SET search_path TO {}, public").format(sql.Identifier(schema)))
-    conn.execute(MIGRATION)
+    for migration in MIGRATIONS:
+        conn.execute(migration)
     try:
         yield conn, schema
     finally:
@@ -365,3 +369,72 @@ def test_terminal_family_cannot_accept_new_revision(db):
 
     with pytest.raises(psycopg.Error):
         _correction(conn, incident, old_c, digest="sha256:old-r2", revision=2)
+
+
+def test_runtime_role_cannot_rewrite_authoritative_projection_or_bypass_event_guard(db):
+    conn, schema = db
+    privilege = conn.execute(
+        """
+        SELECT rolsuper OR rolcreaterole
+        FROM pg_catalog.pg_roles
+        WHERE rolname = current_user
+        """
+    ).fetchone()[0]
+    if not privilege:
+        pytest.skip("test database user needs SUPERUSER or CREATEROLE for runtime-role qualification")
+
+    role = f"fuckup_runtime_{uuid4().hex[:16]}"
+    current_user = conn.execute("SELECT current_user").fetchone()[0]
+    incident, correction, event, *_ = _ids()
+
+    try:
+        conn.execute(sql.SQL("CREATE ROLE {} NOLOGIN").format(sql.Identifier(role)))
+        conn.execute(
+            sql.SQL("GRANT {} TO {}").format(
+                sql.Identifier(role),
+                sql.Identifier(current_user),
+            )
+        )
+        conn.execute("SELECT configure_fuckup_runtime_role(%s::name)", (role,))
+
+        _incident(conn, incident)
+        _correction(conn, incident, correction, digest="sha256:a")
+
+        conn.execute(sql.SQL("SET ROLE {}").format(sql.Identifier(role)))
+        with pytest.raises(psycopg.errors.InsufficientPrivilege):
+            conn.execute(
+                "UPDATE corrections SET current_revision = 999, status = 'ACTIVE' WHERE id = %s",
+                (correction,),
+            )
+
+        with pytest.raises(psycopg.errors.InsufficientPrivilege):
+            conn.execute(
+                """
+                INSERT INTO events(
+                    id, incident_id, event_type, payload, effect_digest, idempotency_key
+                )
+                VALUES (%s, %s, 'org.fuckup.failure.flagged', '{}'::jsonb, 'sha256:x', 'direct')
+                """,
+                (event, incident),
+            )
+
+        guarded = conn.execute(
+            """
+            SELECT id
+            FROM record_event_idempotent(
+                %s, %s, 'org.fuckup.failure.flagged', NULL,
+                '{}'::jsonb, NULL, 'sha256:guarded', NULL, '{}'::jsonb, 'guarded'
+            )
+            """,
+            (event, incident),
+        ).fetchone()[0]
+        assert guarded == event
+    finally:
+        conn.execute("RESET ROLE")
+        conn.execute(
+            sql.SQL("REVOKE {} FROM {}").format(
+                sql.Identifier(role),
+                sql.Identifier(current_user),
+            )
+        )
+        conn.execute(sql.SQL("DROP ROLE IF EXISTS {}").format(sql.Identifier(role)))
