@@ -2,8 +2,9 @@ import itertools
 
 import pytest
 
+from fuckup_protocol.authorization import authorize_promotion
 from fuckup_protocol.ledger import IdempotencyCollisionError, InMemoryLedger, PromotionRejectedError, StaleQualificationError
-from fuckup_protocol.models import PolicyDecision, QualificationResult, TestResult
+from fuckup_protocol.models import QualificationResult, TestResult
 from fuckup_protocol.validation import TestKind
 
 
@@ -23,6 +24,17 @@ def _passing_qualification(correction):
         exact_subject_digest=correction.subject_digest,
         suite_version="suite-v1",
         tests=tests,
+    )
+
+
+def _authorization(correction, qualification, *, root_cause_supported=True):
+    return authorize_promotion(
+        correction=correction,
+        qualification=qualification,
+        root_cause_supported=root_cause_supported,
+        ambiguous=False,
+        activation_scope={"agent": "demo"},
+        rollback_condition={"signal": "regression"},
     )
 
 
@@ -90,9 +102,7 @@ def test_old_qualification_becomes_stale_after_revision_change():
             correction_id=correction.correction_id,
             correction_revision=1,
             qualification_id="q-1",
-            activation_scope="agent:demo",
-            rollback_condition="revoke on regression",
-            policy_decision=PolicyDecision(allow=True),
+            authorization=_authorization(correction, qualification),
         )
 
 
@@ -100,16 +110,20 @@ def test_policy_rejection_blocks_promotion():
     ledger = InMemoryLedger(id_factory=_ids())
     incident, _ = ledger.submit_incident(fingerprint="fp", fingerprint_version="v1", payload={})
     correction = ledger.create_correction(incident_id=incident.id, payload={"rule": "v1"})
-    ledger.record_qualification("q-1", _passing_qualification(correction))
+    qualification = _passing_qualification(correction)
+    ledger.record_qualification("q-1", qualification)
+    authorization = _authorization(
+        correction,
+        qualification,
+        root_cause_supported=False,
+    )
 
     with pytest.raises(PromotionRejectedError):
         ledger.promote(
             correction_id=correction.correction_id,
             correction_revision=1,
             qualification_id="q-1",
-            activation_scope="agent:demo",
-            rollback_condition="revoke on regression",
-            policy_decision=PolicyDecision(allow=False, reasons=("blocked",)),
+            authorization=authorization,
         )
 
 
@@ -117,14 +131,13 @@ def test_revocation_preserves_promotion_identity_and_history_reference():
     ledger = InMemoryLedger(id_factory=_ids())
     incident, _ = ledger.submit_incident(fingerprint="fp", fingerprint_version="v1", payload={})
     correction = ledger.create_correction(incident_id=incident.id, payload={"rule": "v1"})
-    ledger.record_qualification("q-1", _passing_qualification(correction))
+    qualification = _passing_qualification(correction)
+    ledger.record_qualification("q-1", qualification)
     promotion = ledger.promote(
         correction_id=correction.correction_id,
         correction_revision=1,
         qualification_id="q-1",
-        activation_scope="agent:demo",
-        rollback_condition="revoke on regression",
-        policy_decision=PolicyDecision(allow=True),
+        authorization=_authorization(correction, qualification),
     )
     revoked = ledger.revoke(promotion.id)
 
@@ -159,7 +172,29 @@ def test_failed_qualification_cannot_promote_even_with_allow_policy():
             correction_id=correction.correction_id,
             correction_revision=correction.revision,
             qualification_id="q-fail",
-            activation_scope="agent:demo",
-            rollback_condition="revoke on regression",
-            policy_decision=PolicyDecision(allow=True),
+            authorization=_authorization(correction, qualification),
+        )
+
+
+def test_promotion_rejects_authorization_for_different_qualification():
+    ledger = InMemoryLedger(id_factory=_ids())
+    incident, _ = ledger.submit_incident(fingerprint="fp", fingerprint_version="v1", payload={})
+    correction = ledger.create_correction(incident_id=incident.id, payload={"rule": "v1"})
+    qualification = _passing_qualification(correction)
+    ledger.record_qualification("q-1", qualification)
+    altered = QualificationResult(
+        correction_id=correction.correction_id,
+        correction_revision=correction.revision,
+        exact_subject_digest=correction.subject_digest,
+        suite_version="suite-v2",
+        tests=qualification.tests,
+    )
+    authorization = _authorization(correction, altered)
+
+    with pytest.raises(PromotionRejectedError, match="exact qualification"):
+        ledger.promote(
+            correction_id=correction.correction_id,
+            correction_revision=correction.revision,
+            qualification_id="q-1",
+            authorization=authorization,
         )
