@@ -165,7 +165,7 @@ def test_07_revocation_removes_binding_from_effective_view(db):
     _qualification(conn, qualification, correction, 1, "sha256:a")
     _promotion(conn, promotion, correction, 1, "sha256:a", qualification)
     conn.execute(
-        "INSERT INTO injection_bindings(id,promotion_id,adapter,selector,selector_digest) VALUES (%s,%s,'memory','{}'::jsonb,'sha256:s')",
+        "INSERT INTO injection_bindings(id,promotion_id,adapter,selector,selector_digest) VALUES (%s,%s,'memory','{"agent":"demo"}'::jsonb,'sha256:s')",
         (binding, promotion),
     )
     assert conn.execute("SELECT count(*) FROM active_injection_bindings").fetchone()[0] == 1
@@ -181,7 +181,7 @@ def test_08_supersession_hides_prior_binding_without_deleting_history(db):
     _qualification(conn, old_q, old_c, 1, "sha256:a")
     _promotion(conn, old_p, old_c, 1, "sha256:a", old_q)
     conn.execute(
-        "INSERT INTO injection_bindings(id,promotion_id,adapter,selector,selector_digest) VALUES (%s,%s,'memory','{}'::jsonb,'sha256:s')",
+        "INSERT INTO injection_bindings(id,promotion_id,adapter,selector,selector_digest) VALUES (%s,%s,'memory','{"agent":"demo"}'::jsonb,'sha256:s')",
         (binding, old_p),
     )
     _correction(conn, incident, new_c, digest="sha256:new", supersedes=(old_c, 1))
