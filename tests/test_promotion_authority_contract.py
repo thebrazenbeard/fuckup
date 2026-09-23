@@ -53,3 +53,15 @@ def test_new_authority_functions_are_security_definer_and_public_execute_revoked
     assert "ALTER FUNCTION %I.%s SECURITY DEFINER" in AUTHORITY
     assert "SET search_path TO %I, pg_catalog, pg_temp" in AUTHORITY
     assert "REVOKE ALL ON FUNCTION %I.%s FROM PUBLIC" in AUTHORITY
+
+
+
+def test_new_binding_requires_current_active_promotion():
+    for token in [
+        "p.correction_revision",
+        "c.current_revision",
+        "c.status",
+        "promotion_revision <> current_revision OR correction_status <> 'ACTIVE'",
+        "cannot create a binding for stale or inactive promotion",
+    ]:
+        assert token in AUTHORITY
