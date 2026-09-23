@@ -8,6 +8,7 @@ from typing import Any, Callable, Mapping
 from uuid import uuid4
 
 from .models import CorrectionRevision, PolicyDecision, QualificationResult
+from .validation import ValidationReport
 
 
 def _utcnow() -> datetime:
@@ -16,6 +17,20 @@ def _utcnow() -> datetime:
 
 def subject_digest(payload: Mapping[str, Any]) -> str:
     encoded = json.dumps(payload, ensure_ascii=False, separators=(",", ":"), sort_keys=True).encode("utf-8")
+    return f"sha256:{hashlib.sha256(encoded).hexdigest()}"
+
+
+def effect_digest(*, incident_id: str, event_type: str, payload: Mapping[str, Any]) -> str:
+    encoded = json.dumps(
+        {
+            "incident_id": incident_id,
+            "event_type": event_type,
+            "payload": payload,
+        },
+        ensure_ascii=False,
+        separators=(",", ":"),
+        sort_keys=True,
+    ).encode("utf-8")
     return f"sha256:{hashlib.sha256(encoded).hexdigest()}"
 
 
@@ -36,6 +51,7 @@ class EventRecord:
     incident_id: str
     event_type: str
     payload: Mapping[str, Any]
+    effect_digest: str
     idempotency_key: str | None
     observed_at: datetime
 
@@ -71,6 +87,10 @@ class StaleQualificationError(ValueError):
 
 
 class PromotionRejectedError(ValueError):
+    pass
+
+
+class IdempotencyCollisionError(ValueError):
     pass
 
 
@@ -132,14 +152,27 @@ class InMemoryLedger:
     ) -> tuple[EventRecord, bool]:
         if incident_id not in self._incidents:
             raise KeyError(f"unknown incident: {incident_id}")
+
+        digest = effect_digest(
+            incident_id=incident_id,
+            event_type=event_type,
+            payload=payload,
+        )
+
         if idempotency_key and idempotency_key in self._event_by_idempotency:
-            return self._event_by_idempotency[idempotency_key], True
+            existing = self._event_by_idempotency[idempotency_key]
+            if existing.effect_digest != digest:
+                raise IdempotencyCollisionError(
+                    "idempotency key was reused for a different event effect"
+                )
+            return existing, True
 
         event = EventRecord(
             id=self._id_factory(),
             incident_id=incident_id,
             event_type=event_type,
             payload=dict(payload),
+            effect_digest=digest,
             idempotency_key=idempotency_key,
             observed_at=observed_at or _utcnow(),
         )
@@ -221,6 +254,8 @@ class InMemoryLedger:
         qualification = self._qualifications[qualification_id]
         if not qualification.matches(current):
             raise StaleQualificationError("qualification is stale for the current correction revision")
+        if not ValidationReport.evaluate(current, qualification).passed:
+            raise PromotionRejectedError("qualification did not pass required validation")
 
         promotion = PromotionRecord(
             id=self._id_factory(),
