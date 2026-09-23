@@ -68,3 +68,29 @@ def test_authorization_rejects_blank_scope_value():
             activation_scope={"agent": ""},
             rollback_condition={"signal": "regression"},
         )
+
+
+def test_direct_authorization_construction_is_rejected():
+    from fuckup_protocol.authorization import PromotionAuthorization
+    from fuckup_protocol.models import PolicyDecision
+    from fuckup_protocol.validation import ValidationReport, DEFAULT_REQUIRED_KINDS
+
+    report = ValidationReport(
+        correction_id="c1",
+        correction_revision=1,
+        exact_subject_digest="sha256:a",
+        suite_version="suite-v1",
+        required_kinds=DEFAULT_REQUIRED_KINDS,
+        current=True,
+        passed=True,
+        missing_kinds=frozenset(),
+        failed_test_names=(),
+        unknown_test_names=(),
+    )
+    with pytest.raises(ValueError, match="issued by authorize_promotion"):
+        PromotionAuthorization(
+            validation=report,
+            decision=PolicyDecision(allow=True),
+            activation_scope={"agent": "demo"},
+            rollback_condition={"signal": "regression"},
+        )
