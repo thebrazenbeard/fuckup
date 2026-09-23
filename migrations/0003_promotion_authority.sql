@@ -54,21 +54,27 @@ BEFORE INSERT ON promotions
 FOR EACH ROW EXECUTE FUNCTION validate_promotion_authority_shape();
 
 CREATE FUNCTION validate_injection_binding_authority()
-RETURNS trigger AS $$
+RETURNS trigger AS $
 DECLARE
     approved_scope jsonb;
     promotion_revoked_at timestamptz;
+    promotion_revision integer;
+    current_revision integer;
+    correction_status text;
 BEGIN
     IF NOT selector_scope_is_valid(NEW.selector) THEN
         RAISE EXCEPTION
             'binding selector must be a non-empty flat selector of JSON scalar values';
     END IF;
 
-    SELECT activation_scope, revoked_at
-      INTO approved_scope, promotion_revoked_at
-      FROM promotions
-     WHERE id = NEW.promotion_id
-     FOR SHARE;
+    SELECT p.activation_scope, p.revoked_at, p.correction_revision,
+           c.current_revision, c.status
+      INTO approved_scope, promotion_revoked_at, promotion_revision,
+           current_revision, correction_status
+      FROM promotions p
+      JOIN corrections c ON c.id = p.correction_id
+     WHERE p.id = NEW.promotion_id
+     FOR SHARE OF p, c;
 
     IF approved_scope IS NULL THEN
         RAISE EXCEPTION 'unknown promotion %', NEW.promotion_id;
@@ -76,6 +82,12 @@ BEGIN
 
     IF promotion_revoked_at IS NOT NULL THEN
         RAISE EXCEPTION 'cannot create a binding for revoked promotion %', NEW.promotion_id;
+    END IF;
+
+    IF promotion_revision <> current_revision OR correction_status <> 'ACTIVE' THEN
+        RAISE EXCEPTION
+            'cannot create a binding for stale or inactive promotion %',
+            NEW.promotion_id;
     END IF;
 
     -- With the deliberately flat scalar selector contract, JSONB containment
@@ -88,7 +100,7 @@ BEGIN
 
     RETURN NEW;
 END;
-$$ LANGUAGE plpgsql;
+$ LANGUAGE plpgsql;
 
 CREATE TRIGGER injection_bindings_authority_before_insert
 BEFORE INSERT ON injection_bindings
