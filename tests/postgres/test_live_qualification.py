@@ -579,3 +579,115 @@ def test_runtime_role_rejects_public_column_privilege_bypass(db):
             )
         )
         conn.execute(sql.SQL("DROP ROLE IF EXISTS {}").format(sql.Identifier(runtime)))
+
+
+def test_runtime_role_rejects_public_table_insert_bypass(db):
+    conn, schema = db
+    privilege = conn.execute(
+        """
+        SELECT rolsuper OR rolcreaterole
+        FROM pg_catalog.pg_roles
+        WHERE rolname = current_user
+        """
+    ).fetchone()[0]
+    if not privilege:
+        pytest.skip("test database user needs SUPERUSER or CREATEROLE for role qualification")
+
+    runtime = f"fuckup_runtime_{uuid4().hex[:16]}"
+
+    try:
+        conn.execute(sql.SQL("CREATE ROLE {} NOLOGIN").format(sql.Identifier(runtime)))
+        conn.execute(
+            sql.SQL("GRANT INSERT ON {}.worker_jobs TO PUBLIC").format(
+                sql.Identifier(schema)
+            )
+        )
+
+        with pytest.raises(psycopg.Error, match="retains forbidden effective privileges"):
+            conn.execute("SELECT configure_fuckup_runtime_role(%s::name)", (runtime,))
+    finally:
+        conn.execute(
+            sql.SQL("REVOKE INSERT ON {}.worker_jobs FROM PUBLIC").format(
+                sql.Identifier(schema)
+            )
+        )
+        conn.execute(sql.SQL("DROP ROLE IF EXISTS {}").format(sql.Identifier(runtime)))
+
+
+def test_runtime_role_rejects_public_sensitive_column_insert_bypass(db):
+    conn, schema = db
+    privilege = conn.execute(
+        """
+        SELECT rolsuper OR rolcreaterole
+        FROM pg_catalog.pg_roles
+        WHERE rolname = current_user
+        """
+    ).fetchone()[0]
+    if not privilege:
+        pytest.skip("test database user needs SUPERUSER or CREATEROLE for role qualification")
+
+    runtime = f"fuckup_runtime_{uuid4().hex[:16]}"
+
+    try:
+        conn.execute(sql.SQL("CREATE ROLE {} NOLOGIN").format(sql.Identifier(runtime)))
+        conn.execute(
+            sql.SQL("GRANT INSERT (status) ON {}.worker_jobs TO PUBLIC").format(
+                sql.Identifier(schema)
+            )
+        )
+
+        with pytest.raises(psycopg.Error, match="retains forbidden effective privileges"):
+            conn.execute("SELECT configure_fuckup_runtime_role(%s::name)", (runtime,))
+    finally:
+        conn.execute(
+            sql.SQL("REVOKE INSERT (status) ON {}.worker_jobs FROM PUBLIC").format(
+                sql.Identifier(schema)
+            )
+        )
+        conn.execute(sql.SQL("DROP ROLE IF EXISTS {}").format(sql.Identifier(runtime)))
+
+
+def test_trusted_schema_is_not_writable_by_public(db):
+    conn, schema = db
+    assert not conn.execute(
+        "SELECT pg_catalog.has_schema_privilege('public', %s, 'CREATE')",
+        (schema,),
+    ).fetchone()[0]
+
+
+def test_runtime_role_rejects_database_create_privilege(db):
+    conn, _schema = db
+    can_grant = conn.execute(
+        """
+        SELECT pg_catalog.has_database_privilege(
+            current_user,
+            current_database(),
+            'CREATE WITH GRANT OPTION'
+        )
+        """
+    ).fetchone()[0]
+    if not can_grant:
+        pytest.skip("test database user needs CREATE WITH GRANT OPTION on the test database")
+
+    runtime = f"fuckup_runtime_{uuid4().hex[:16]}"
+    database = conn.execute("SELECT current_database()").fetchone()[0]
+
+    try:
+        conn.execute(sql.SQL("CREATE ROLE {} NOLOGIN").format(sql.Identifier(runtime)))
+        conn.execute(
+            sql.SQL("GRANT CREATE ON DATABASE {} TO {}").format(
+                sql.Identifier(database),
+                sql.Identifier(runtime),
+            )
+        )
+
+        with pytest.raises(psycopg.Error, match="retains forbidden effective privileges"):
+            conn.execute("SELECT configure_fuckup_runtime_role(%s::name)", (runtime,))
+    finally:
+        conn.execute(
+            sql.SQL("REVOKE CREATE ON DATABASE {} FROM {}").format(
+                sql.Identifier(database),
+                sql.Identifier(runtime),
+            )
+        )
+        conn.execute(sql.SQL("DROP ROLE IF EXISTS {}").format(sql.Identifier(runtime)))

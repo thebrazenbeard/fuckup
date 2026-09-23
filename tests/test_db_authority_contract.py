@@ -75,4 +75,49 @@ def test_runtime_role_effective_forbidden_privileges_are_verified():
 
 def test_authority_plpgsql_delimiters_are_balanced():
     assert AUTHORITY.count("$$") % 2 == 0
-    assert "configure_fuckup_runtime_role(p_role name)\\nRETURNS void AS $$" in AUTHORITY
+    assert "configure_fuckup_runtime_role(p_role name)" in AUTHORITY
+    assert "RETURNS void AS $$" in AUTHORITY
+
+
+def test_runtime_role_rejects_broad_table_level_dml_that_would_bypass_column_scoping():
+    for table in [
+        "incidents",
+        "root_cause_candidates",
+        "corrections",
+        "correction_revisions",
+        "qualifications",
+        "promotions",
+        "injection_bindings",
+        "worker_jobs",
+    ]:
+        assert f"'{table}'), 'INSERT, UPDATE, DELETE, TRUNCATE'" in AUTHORITY
+
+
+def test_runtime_role_rejects_forbidden_column_level_privileges():
+    for token in [
+        "('corrections', 'current_revision', 'INSERT')",
+        "('corrections', 'status', 'INSERT')",
+        "('worker_jobs', 'status', 'INSERT')",
+        "('worker_jobs', 'locked_by', 'INSERT')",
+        "('root_cause_candidates', 'incident_id', 'UPDATE')",
+        "('promotions', 'policy_decision', 'UPDATE')",
+        "('injection_bindings', 'selector', 'UPDATE')",
+        "pg_catalog.has_column_privilege",
+    ]:
+        assert token in AUTHORITY
+
+
+def test_trusted_schema_itself_is_locked_against_public_object_creation():
+    for token in [
+        "migration identity % must own trusted schema %",
+        "REVOKE CREATE ON SCHEMA %I FROM PUBLIC",
+        "pg_catalog.has_schema_privilege('public', s, 'CREATE')",
+        "ALTER DEFAULT PRIVILEGES IN SCHEMA %I REVOKE EXECUTE ON FUNCTIONS FROM PUBLIC",
+    ]:
+        assert token in AUTHORITY
+
+
+def test_runtime_role_cannot_own_or_create_at_database_scope():
+    assert "pg_catalog.pg_database" in AUTHORITY
+    assert "runtime role % must not own database %" in AUTHORITY
+    assert "pg_catalog.has_database_privilege(p_role, current_database(), 'CREATE')" in AUTHORITY

@@ -4,11 +4,41 @@ BEGIN;
 -- Do not install it in public: SECURITY DEFINER functions deliberately bind
 -- their search_path to the installation schema.
 DO $authority_check$
+DECLARE
+    s name := current_schema();
+    schema_owner name;
 BEGIN
-    IF current_schema() = 'public' THEN
+    IF s = 'public' THEN
         RAISE EXCEPTION
             'F.U.C.K.U.P. runtime authority must be installed in a dedicated trusted schema, not public';
     END IF;
+
+    SELECT owner_role.rolname
+      INTO schema_owner
+      FROM pg_catalog.pg_namespace ns
+      JOIN pg_catalog.pg_roles owner_role ON owner_role.oid = ns.nspowner
+     WHERE ns.nspname = s;
+
+    IF schema_owner IS DISTINCT FROM current_user THEN
+        RAISE EXCEPTION
+            'migration identity % must own trusted schema % (owner is %)',
+            current_user, s, schema_owner;
+    END IF;
+
+    -- A SECURITY DEFINER search path is only trusted if untrusted users cannot
+    -- create shadow objects in the schema.
+    EXECUTE format('REVOKE CREATE ON SCHEMA %I FROM PUBLIC', s);
+
+    IF pg_catalog.has_schema_privilege('public', s, 'CREATE') THEN
+        RAISE EXCEPTION 'trusted schema % remains writable by PUBLIC', s;
+    END IF;
+
+    -- PostgreSQL grants EXECUTE on newly-created functions to PUBLIC by
+    -- default. Harden future functions created by this migration owner too.
+    EXECUTE format(
+        'ALTER DEFAULT PRIVILEGES IN SCHEMA %I REVOKE EXECUTE ON FUNCTIONS FROM PUBLIC',
+        s
+    );
 END;
 $authority_check$ LANGUAGE plpgsql;
 
@@ -162,6 +192,15 @@ BEGIN
         RAISE EXCEPTION 'runtime role % has forbidden administrative attributes', p_role;
     END IF;
 
+    IF EXISTS (
+        SELECT 1
+          FROM pg_catalog.pg_database
+         WHERE datname = current_database()
+           AND datdba = runtime_oid
+    ) THEN
+        RAISE EXCEPTION 'runtime role % must not own database %', p_role, current_database();
+    END IF;
+
     -- The runtime identity must be a leaf role. Direct REVOKE statements do
     -- not neutralize privileges inherited from parent roles or roles that can
     -- later be assumed through SET ROLE.
@@ -254,9 +293,34 @@ BEGIN
     );
 
     -- Verify effective privileges, not merely direct grants. This catches
-    -- ownership or unexpected privilege inheritance that would defeat the
-    -- least-privilege contract.
-    IF pg_catalog.has_schema_privilege(p_role, s, 'CREATE')
+    -- ownership, PUBLIC grants, or unexpected privilege inheritance that
+    -- would defeat the least-privilege contract.
+    IF pg_catalog.has_database_privilege(p_role, current_database(), 'CREATE')
+       OR pg_catalog.has_schema_privilege(p_role, s, 'CREATE')
+       OR pg_catalog.has_table_privilege(
+            p_role, pg_catalog.format('%I.%I', s, 'incidents'), 'INSERT, UPDATE, DELETE, TRUNCATE'
+          )
+       OR pg_catalog.has_table_privilege(
+            p_role, pg_catalog.format('%I.%I', s, 'root_cause_candidates'), 'INSERT, UPDATE, DELETE, TRUNCATE'
+          )
+       OR pg_catalog.has_table_privilege(
+            p_role, pg_catalog.format('%I.%I', s, 'corrections'), 'INSERT, UPDATE, DELETE, TRUNCATE'
+          )
+       OR pg_catalog.has_table_privilege(
+            p_role, pg_catalog.format('%I.%I', s, 'correction_revisions'), 'INSERT, UPDATE, DELETE, TRUNCATE'
+          )
+       OR pg_catalog.has_table_privilege(
+            p_role, pg_catalog.format('%I.%I', s, 'qualifications'), 'INSERT, UPDATE, DELETE, TRUNCATE'
+          )
+       OR pg_catalog.has_table_privilege(
+            p_role, pg_catalog.format('%I.%I', s, 'promotions'), 'INSERT, UPDATE, DELETE, TRUNCATE'
+          )
+       OR pg_catalog.has_table_privilege(
+            p_role, pg_catalog.format('%I.%I', s, 'injection_bindings'), 'INSERT, UPDATE, DELETE, TRUNCATE'
+          )
+       OR pg_catalog.has_table_privilege(
+            p_role, pg_catalog.format('%I.%I', s, 'worker_jobs'), 'INSERT, UPDATE, DELETE, TRUNCATE'
+          )
        OR pg_catalog.has_any_column_privilege(
             p_role, pg_catalog.format('%I.%I', s, 'corrections'), 'UPDATE'
           )
@@ -267,7 +331,7 @@ BEGIN
             p_role, pg_catalog.format('%I.%I', s, 'events'), 'UPDATE'
           )
        OR pg_catalog.has_table_privilege(
-            p_role, pg_catalog.format('%I.%I', s, 'events'), 'DELETE'
+            p_role, pg_catalog.format('%I.%I', s, 'events'), 'DELETE, TRUNCATE'
           )
        OR pg_catalog.has_any_column_privilege(
             p_role, pg_catalog.format('%I.%I', s, 'outbox'), 'INSERT'
@@ -276,10 +340,77 @@ BEGIN
             p_role, pg_catalog.format('%I.%I', s, 'outbox'), 'UPDATE'
           )
        OR pg_catalog.has_table_privilege(
-            p_role, pg_catalog.format('%I.%I', s, 'outbox'), 'DELETE'
+            p_role, pg_catalog.format('%I.%I', s, 'outbox'), 'DELETE, TRUNCATE'
           )
        OR pg_catalog.has_any_column_privilege(
             p_role, pg_catalog.format('%I.%I', s, 'worker_jobs'), 'UPDATE'
+          )
+       OR pg_catalog.has_any_column_privilege(
+            p_role, pg_catalog.format('%I.%I', s, 'incidents'), 'UPDATE'
+          )
+       OR pg_catalog.has_any_column_privilege(
+            p_role, pg_catalog.format('%I.%I', s, 'correction_revisions'), 'UPDATE'
+          )
+       OR pg_catalog.has_any_column_privilege(
+            p_role, pg_catalog.format('%I.%I', s, 'qualifications'), 'UPDATE'
+          )
+       OR EXISTS (
+            SELECT 1
+              FROM (
+                    VALUES
+                        ('incidents', 'first_seen_at', 'INSERT'),
+                        ('incidents', 'last_seen_at', 'INSERT'),
+                        ('incidents', 'occurrence_count', 'INSERT'),
+                        ('incidents', 'status', 'INSERT'),
+                        ('root_cause_candidates', 'created_at', 'INSERT'),
+                        ('corrections', 'current_revision', 'INSERT'),
+                        ('corrections', 'status', 'INSERT'),
+                        ('corrections', 'created_at', 'INSERT'),
+                        ('correction_revisions', 'created_at', 'INSERT'),
+                        ('qualifications', 'finished_at', 'INSERT'),
+                        ('promotions', 'activated_at', 'INSERT'),
+                        ('promotions', 'revoked_at', 'INSERT'),
+                        ('injection_bindings', 'active', 'INSERT'),
+                        ('injection_bindings', 'created_at', 'INSERT'),
+                        ('worker_jobs', 'status', 'INSERT'),
+                        ('worker_jobs', 'attempts', 'INSERT'),
+                        ('worker_jobs', 'locked_by', 'INSERT'),
+                        ('worker_jobs', 'locked_at', 'INSERT'),
+                        ('worker_jobs', 'lease_expires_at', 'INSERT'),
+                        ('worker_jobs', 'last_error', 'INSERT'),
+                        ('worker_jobs', 'created_at', 'INSERT'),
+                        ('worker_jobs', 'updated_at', 'INSERT'),
+                        ('root_cause_candidates', 'id', 'UPDATE'),
+                        ('root_cause_candidates', 'incident_id', 'UPDATE'),
+                        ('root_cause_candidates', 'created_at', 'UPDATE'),
+                        ('promotions', 'id', 'UPDATE'),
+                        ('promotions', 'correction_id', 'UPDATE'),
+                        ('promotions', 'correction_revision', 'UPDATE'),
+                        ('promotions', 'exact_subject_digest', 'UPDATE'),
+                        ('promotions', 'qualification_id', 'UPDATE'),
+                        ('promotions', 'qualification_result', 'UPDATE'),
+                        ('promotions', 'policy_name', 'UPDATE'),
+                        ('promotions', 'policy_version', 'UPDATE'),
+                        ('promotions', 'policy_decision', 'UPDATE'),
+                        ('promotions', 'approved_by', 'UPDATE'),
+                        ('promotions', 'activation_scope', 'UPDATE'),
+                        ('promotions', 'rollback_condition', 'UPDATE'),
+                        ('promotions', 'activated_at', 'UPDATE'),
+                        ('injection_bindings', 'id', 'UPDATE'),
+                        ('injection_bindings', 'promotion_id', 'UPDATE'),
+                        ('injection_bindings', 'adapter', 'UPDATE'),
+                        ('injection_bindings', 'selector', 'UPDATE'),
+                        ('injection_bindings', 'selector_digest', 'UPDATE'),
+                        ('injection_bindings', 'priority', 'UPDATE'),
+                        ('injection_bindings', 'conflict_policy', 'UPDATE'),
+                        ('injection_bindings', 'created_at', 'UPDATE')
+              ) AS forbidden(table_name, column_name, privilege_type)
+             WHERE pg_catalog.has_column_privilege(
+                    p_role,
+                    pg_catalog.format('%I.%I', s, forbidden.table_name),
+                    forbidden.column_name,
+                    forbidden.privilege_type
+             )
           ) THEN
         RAISE EXCEPTION 'runtime role % retains forbidden effective privileges', p_role;
     END IF;

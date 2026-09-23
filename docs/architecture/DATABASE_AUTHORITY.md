@@ -8,7 +8,11 @@ the very invariants the protocol is intended to preserve.
 
 Install the database migrations into a dedicated trusted PostgreSQL schema.
 
-Do not install the runtime authority layer in `public`.
+Do not install the runtime authority layer in `public`. The migration identity
+must own the trusted schema. The authority migration revokes `CREATE` on that
+schema from `PUBLIC` and verifies that the PUBLIC pseudo-role cannot create
+objects there. It also revokes default PUBLIC execution for future functions
+created by that migration owner in the trusted schema.
 
 Use separate identities:
 
@@ -103,3 +107,9 @@ runtime identity whose privilege graph is already isolated.
 Live qualification includes an inherited-parent-role attack case and proves the
 configured runtime can still claim, complete, and fail jobs through the guarded
 worker functions.
+
+
+The runtime identity must also not own the database or hold database-level
+`CREATE`. PostgreSQL explicitly treats database ownership as incompatible with
+a secure untrusted-schema model; the configurator therefore rejects that
+authority rather than trying to compensate for it.
