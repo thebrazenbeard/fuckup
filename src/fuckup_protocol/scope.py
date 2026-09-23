@@ -44,7 +44,17 @@ def selector_within_scope(selector: object, activation_scope: object) -> bool:
 
     selector_map = selector
     scope_map = activation_scope
+
+    def scalar_equal(actual: SelectorScalar, expected: SelectorScalar) -> bool:
+        # Python considers True == 1; JSON does not. Keep booleans distinct
+        # while allowing normal numeric equality between ints and floats.
+        if isinstance(actual, bool) or isinstance(expected, bool):
+            return isinstance(actual, bool) and isinstance(expected, bool) and actual == expected
+        if isinstance(actual, (int, float)) and isinstance(expected, (int, float)):
+            return actual == expected
+        return isinstance(actual, str) and isinstance(expected, str) and actual == expected
+
     return all(
-        key in selector_map and selector_map[key] == expected
+        key in selector_map and scalar_equal(selector_map[key], expected)
         for key, expected in scope_map.items()
     )
