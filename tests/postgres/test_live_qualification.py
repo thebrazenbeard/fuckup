@@ -691,3 +691,117 @@ def test_runtime_role_rejects_database_create_privilege(db):
             )
         )
         conn.execute(sql.SQL("DROP ROLE IF EXISTS {}").format(sql.Identifier(runtime)))
+
+
+def test_runtime_role_cannot_forge_allow_true_promotion(db):
+    conn, _schema = db
+    privilege = conn.execute(
+        """
+        SELECT rolsuper OR rolcreaterole
+        FROM pg_catalog.pg_roles
+        WHERE rolname = current_user
+        """
+    ).fetchone()[0]
+    if not privilege:
+        pytest.skip("test database user needs SUPERUSER or CREATEROLE for runtime-role qualification")
+
+    runtime = f"fuckup_runtime_{uuid4().hex[:16]}"
+    current_user = conn.execute("SELECT current_user").fetchone()[0]
+    incident, correction, qualification, promotion, *_ = _ids()
+
+    try:
+        conn.execute(sql.SQL("CREATE ROLE {} NOLOGIN").format(sql.Identifier(runtime)))
+        conn.execute("SELECT configure_fuckup_runtime_role(%s::name)", (runtime,))
+        conn.execute(
+            sql.SQL("GRANT {} TO {}").format(
+                sql.Identifier(runtime),
+                sql.Identifier(current_user),
+            )
+        )
+
+        _incident(conn, incident)
+        _correction(conn, incident, correction, digest="sha256:a")
+        _qualification(conn, qualification, correction, 1, "sha256:a")
+
+        conn.execute(sql.SQL("SET ROLE {}").format(sql.Identifier(runtime)))
+        with pytest.raises(psycopg.errors.InsufficientPrivilege):
+            _promotion(conn, promotion, correction, 1, "sha256:a", qualification)
+    finally:
+        conn.execute("RESET ROLE")
+        conn.execute(sql.SQL("DROP OWNED BY {}").format(sql.Identifier(runtime)))
+        conn.execute(
+            sql.SQL("REVOKE {} FROM {}").format(
+                sql.Identifier(runtime),
+                sql.Identifier(current_user),
+            )
+        )
+        conn.execute(sql.SQL("DROP ROLE IF EXISTS {}").format(sql.Identifier(runtime)))
+
+
+def test_binding_selector_cannot_exceed_promotion_activation_scope(db):
+    conn, _schema = db
+    incident, correction, qualification, promotion, broad_binding, narrow_binding, *_ = _ids()
+    _incident(conn, incident)
+    _correction(conn, incident, correction, digest="sha256:a")
+    _qualification(conn, qualification, correction, 1, "sha256:a")
+    _promotion(conn, promotion, correction, 1, "sha256:a", qualification)
+
+    with pytest.raises(psycopg.Error, match="exceeds authorized activation scope"):
+        conn.execute(
+            """
+            INSERT INTO injection_bindings(
+                id, promotion_id, adapter, selector, selector_digest
+            )
+            VALUES (%s,%s,'prompt','{"model":"alpha"}'::jsonb,'sha256:broad')
+            """,
+            (broad_binding, promotion),
+        )
+
+    conn.execute(
+        """
+        INSERT INTO injection_bindings(
+            id, promotion_id, adapter, selector, selector_digest
+        )
+        VALUES (%s,%s,'prompt','{"agent":"demo","model":"alpha"}'::jsonb,'sha256:narrow')
+        """,
+        (narrow_binding, promotion),
+    )
+    assert conn.execute(
+        "SELECT active FROM injection_bindings WHERE id = %s",
+        (narrow_binding,),
+    ).fetchone()[0]
+
+
+def test_binding_reactivation_and_expiry_extension_are_rejected(db):
+    conn, _schema = db
+    incident, correction, qualification, promotion, binding, *_ = _ids()
+    _incident(conn, incident)
+    _correction(conn, incident, correction, digest="sha256:a")
+    _qualification(conn, qualification, correction, 1, "sha256:a")
+    _promotion(conn, promotion, correction, 1, "sha256:a", qualification)
+    conn.execute(
+        """
+        INSERT INTO injection_bindings(
+            id, promotion_id, adapter, selector, selector_digest, expires_at
+        )
+        VALUES (
+            %s,%s,'prompt','{"agent":"demo"}'::jsonb,'sha256:binding',
+            now() + interval '1 hour'
+        )
+        """,
+        (binding, promotion),
+    )
+
+    conn.execute(
+        "UPDATE injection_bindings SET expires_at = expires_at - interval '10 minutes' WHERE id = %s",
+        (binding,),
+    )
+    with pytest.raises(psycopg.Error, match="move earlier"):
+        conn.execute(
+            "UPDATE injection_bindings SET expires_at = expires_at + interval '20 minutes' WHERE id = %s",
+            (binding,),
+        )
+
+    conn.execute("UPDATE injection_bindings SET active = false WHERE id = %s", (binding,))
+    with pytest.raises(psycopg.Error, match="reactivation"):
+        conn.execute("UPDATE injection_bindings SET active = true WHERE id = %s", (binding,))
