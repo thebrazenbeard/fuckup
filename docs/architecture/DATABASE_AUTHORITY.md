@@ -1,0 +1,84 @@
+# PostgreSQL Runtime Authority
+
+F.U.C.K.U.P. treats database authority as part of the corrective-learning safety
+model. A runtime that can rewrite durable currentness fields directly can bypass
+the very invariants the protocol is intended to preserve.
+
+## Deployment model
+
+Install the database migrations into a dedicated trusted PostgreSQL schema.
+
+Do not install the runtime authority layer in `public`.
+
+Use separate identities:
+
+- **migration owner** — owns the schema/tables/functions and applies migrations;
+- **runtime role** — non-owner application identity with least privilege;
+- optional future **publisher/admin roles** for outbox publication or protected
+  operational effects.
+
+The runtime role must not own the F.U.C.K.U.P. schema or objects.
+
+## Authority boundary
+
+The runtime role receives:
+
+- read access to the current data model;
+- carefully scoped INSERT privileges for ordinary domain facts;
+- `revoked_at`-only promotion updates;
+- bounded binding deactivation/expiry updates;
+- EXECUTE on guarded event and worker functions.
+
+It does **not** receive direct authority to:
+
+- update `corrections.current_revision`;
+- update `corrections.status`;
+- directly insert/update/delete the protected event ledger;
+- write the transactional outbox;
+- rewrite correction revisions or qualifications;
+- mutate worker state/locks/leases directly.
+
+Those mutations occur through trigger-controlled or guarded functions owned by
+the migration identity.
+
+## SECURITY DEFINER
+
+Guarded mutation functions are converted to `SECURITY DEFINER` in
+`migrations/0002_runtime_authority.sql`.
+
+Their `search_path` is pinned to:
+
+1. the trusted installation schema;
+2. `pg_catalog`;
+3. `pg_temp` last.
+
+`PUBLIC` execute is revoked before the migration transaction commits.
+
+This follows PostgreSQL's security guidance for `SECURITY DEFINER`: use a
+trusted search path and selectively grant execution rather than leaving the
+default PUBLIC execute privilege.
+
+## Runtime provisioning
+
+The owner-only function:
+
+`configure_fuckup_runtime_role(role_name)`
+
+revokes broad table privileges and grants the bounded runtime contract.
+
+The supplied `sql/configure_runtime_role.sql` wrapper is intended for a DBA or
+migration operator. It also configures the role's database-local search path.
+
+## Qualification requirement
+
+Source-level privilege declarations are not enough.
+
+The live PostgreSQL suite must prove that a configured runtime role:
+
+- cannot rewrite correction currentness/status;
+- cannot insert directly into the protected event ledger;
+- can call `record_event_idempotent()`;
+- can claim/complete/fail work through guarded functions;
+- cannot bypass promotion/revision lifecycle protections.
+
+The test remains opt-in through `FUCKUP_TEST_DATABASE_URL`.
