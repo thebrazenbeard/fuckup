@@ -18,8 +18,9 @@ Use separate identities:
 
 - **migration owner** — owns the schema/tables/functions and applies migrations;
 - **runtime role** — non-owner application identity with least privilege;
-- optional future **publisher/admin roles** for outbox publication or protected
-  operational effects.
+- **authorizer role** — distinct trusted identity for promotion and binding
+  creation; it is forbidden from being the runtime role;
+- optional future **publisher/admin roles** for outbox publication.
 
 The runtime role must not own the F.U.C.K.U.P. schema or objects.
 
@@ -29,9 +30,13 @@ The runtime role receives:
 
 - read access to the current data model;
 - carefully scoped INSERT privileges for ordinary domain facts;
-- `revoked_at`-only promotion updates;
-- bounded binding deactivation/expiry updates;
 - EXECUTE on guarded event and worker functions.
+
+Promotion and binding publication are protected effects. The runtime role
+receives no direct or guarded mutation authority on `promotions` or
+`injection_bindings`: it cannot create, bind, revoke, deactivate, reactivate,
+or change expiry. It can report evidence that should cause rollback, but the
+separate authorizer applies that protected effect.
 
 It does **not** receive direct authority to:
 
@@ -40,15 +45,20 @@ It does **not** receive direct authority to:
 - directly insert/update/delete the protected event ledger;
 - write the transactional outbox;
 - rewrite correction revisions or qualifications;
-- mutate worker state/locks/leases directly.
+- mutate worker state/locks/leases directly;
+- fabricate a promotion by supplying its own `{"allow": true}` JSON;
+- create an injection binding or broaden an approved binding scope;
+- reactivate a disabled binding or extend/remove an existing expiry.
 
 Those mutations occur through trigger-controlled or guarded functions owned by
-the migration identity.
+the migration identity. Promotion/binding creation additionally requires the
+separately configured authorizer role.
 
 ## SECURITY DEFINER
 
 Guarded mutation functions are converted to `SECURITY DEFINER` in
-`migrations/0002_runtime_authority.sql`.
+`migrations/0002_runtime_authority.sql` and
+`migrations/0003_promotion_authority.sql`.
 
 Their `search_path` is pinned to:
 
@@ -62,16 +72,20 @@ This follows PostgreSQL's security guidance for `SECURITY DEFINER`: use a
 trusted search path and selectively grant execution rather than leaving the
 default PUBLIC execute privilege.
 
-## Runtime provisioning
+## Runtime and authorizer provisioning
 
-The owner-only function:
+The owner-only functions:
 
-`configure_fuckup_runtime_role(role_name)`
+- `configure_fuckup_runtime_role(role_name)`;
+- `configure_fuckup_authorizer_role(role_name)`.
 
-revokes broad table privileges and grants the bounded runtime contract.
+bind each clean leaf role to exactly one authority kind. The same role cannot be
+configured as both runtime and authorizer.
 
-The supplied `sql/configure_runtime_role.sql` wrapper is intended for a DBA or
-migration operator. It also configures the role's database-local search path.
+The runtime configurator verifies that no promotion/binding DML authority is
+present. The authorizer receives SELECT plus EXECUTE on guarded
+promotion/binding creation, revocation, and restriction functions; it does not
+receive direct table DML.
 
 ## Qualification requirement
 
@@ -113,3 +127,18 @@ The runtime identity must also not own the database or hold database-level
 `CREATE`. PostgreSQL explicitly treats database ownership as incompatible with
 a secure untrusted-schema model; the configurator therefore rejects that
 authority rather than trying to compensate for it.
+
+
+## Promotion/binding scope contract
+
+`activation_scope` and binding `selector` use one deliberately small contract:
+a non-empty flat JSON object whose values are strings, numbers, or booleans.
+Nested objects, arrays, and null are rejected.
+
+A binding selector must contain every key/value constraint in the promotion's
+activation scope. It may add constraints, making the binding narrower, but may
+not remove or change an approved constraint.
+
+Binding authority is monotonic after creation: identity/scope fields are
+immutable, inactive bindings cannot be reactivated, existing expiries cannot be
+extended or removed, and bindings cannot be deleted as a way to erase history.

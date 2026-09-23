@@ -7,7 +7,9 @@ from datetime import datetime, timezone
 from typing import Any, Callable, Mapping
 from uuid import uuid4
 
+from .contracts import JsonObject, freeze_json_object
 from .models import CorrectionRevision, PolicyDecision, QualificationResult
+from .scope import SelectorScope, freeze_selector_scope
 from .validation import ValidationReport
 
 
@@ -75,11 +77,19 @@ class PromotionRecord:
     correction_id: str
     correction_revision: int
     qualification_id: str
-    activation_scope: str
-    rollback_condition: str
+    activation_scope: SelectorScope
+    rollback_condition: JsonObject
     policy_decision: PolicyDecision
     activated_at: datetime
     revoked_at: datetime | None = None
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "activation_scope", freeze_selector_scope(self.activation_scope))
+        object.__setattr__(
+            self,
+            "rollback_condition",
+            freeze_json_object(self.rollback_condition, require_nonempty=True),
+        )
 
 
 class StaleQualificationError(ValueError):
@@ -241,8 +251,8 @@ class InMemoryLedger:
         correction_id: str,
         correction_revision: int,
         qualification_id: str,
-        activation_scope: str,
-        rollback_condition: str,
+        activation_scope: SelectorScope,
+        rollback_condition: JsonObject,
         policy_decision: PolicyDecision,
     ) -> PromotionRecord:
         if not policy_decision.allow:
