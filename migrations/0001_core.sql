@@ -209,7 +209,7 @@ CREATE FUNCTION record_event_idempotent(
     p_provenance jsonb,
     p_idempotency_key text
 )
-RETURNS SETOF events AS $
+RETURNS SETOF events AS $$
 DECLARE
     existing events%ROWTYPE;
 BEGIN
@@ -270,9 +270,9 @@ BEGIN
         RETURN;
     END;
 END;
-$ LANGUAGE plpgsql;
+$$ LANGUAGE plpgsql;
 
-CREATE FUNCTION validate_correction_revision_insert() RETURNS trigger AS $
+CREATE FUNCTION validate_correction_revision_insert() RETURNS trigger AS $$
 DECLARE
     correction_incident uuid;
     expected_revision integer;
@@ -438,6 +438,10 @@ BEGIN
 
     IF OLD.revoked_at IS NOT NULL OR NEW.revoked_at IS NULL THEN
         RAISE EXCEPTION 'revocation is monotonic and may occur only once';
+    END IF;
+
+    IF NEW.revoked_at < OLD.activated_at THEN
+        RAISE EXCEPTION 'revocation cannot precede activation';
     END IF;
 
     RETURN NEW;
