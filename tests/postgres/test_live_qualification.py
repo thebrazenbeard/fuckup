@@ -843,7 +843,7 @@ def test_binding_reactivation_and_expiry_extension_are_rejected(db):
         )
 
 
-def test_runtime_can_contract_binding_but_not_reactivate_it(db):
+def test_runtime_cannot_mutate_published_authority_but_authorizer_can_contract_it(db):
     conn, _schema = db
     privilege = conn.execute(
         """
@@ -856,15 +856,22 @@ def test_runtime_can_contract_binding_but_not_reactivate_it(db):
         pytest.skip("test database user needs SUPERUSER or CREATEROLE for authority-role qualification")
 
     runtime = f"fuckup_runtime_{uuid4().hex[:16]}"
+    authorizer = f"fuckup_authorizer_{uuid4().hex[:16]}"
     current_user = conn.execute("SELECT current_user").fetchone()[0]
     incident, correction, qualification, promotion, binding, *_ = _ids()
 
     try:
         conn.execute(sql.SQL("CREATE ROLE {} NOLOGIN").format(sql.Identifier(runtime)))
+        conn.execute(sql.SQL("CREATE ROLE {} NOLOGIN").format(sql.Identifier(authorizer)))
         conn.execute("SELECT configure_fuckup_runtime_role(%s::name)", (runtime,))
-        conn.execute(
-            sql.SQL("GRANT {} TO {}").format(sql.Identifier(runtime), sql.Identifier(current_user))
-        )
+        conn.execute("SELECT configure_fuckup_authorizer_role(%s::name)", (authorizer,))
+        for role in [runtime, authorizer]:
+            conn.execute(
+                sql.SQL("GRANT {} TO {}").format(
+                    sql.Identifier(role),
+                    sql.Identifier(current_user),
+                )
+            )
 
         _incident(conn, incident)
         _correction(conn, incident, correction)
@@ -884,6 +891,18 @@ def test_runtime_can_contract_binding_but_not_reactivate_it(db):
         )
 
         conn.execute(sql.SQL("SET ROLE {}").format(sql.Identifier(runtime)))
+        with pytest.raises(psycopg.errors.InsufficientPrivilege):
+            conn.execute(
+                "SELECT id FROM restrict_injection_binding(%s,true,now() + interval '1 hour')",
+                (binding,),
+            )
+        with pytest.raises(psycopg.errors.InsufficientPrivilege):
+            conn.execute("SELECT id FROM revoke_promotion(%s,now())", (promotion,))
+        with pytest.raises(psycopg.errors.InsufficientPrivilege):
+            conn.execute("UPDATE injection_bindings SET active = false WHERE id = %s", (binding,))
+
+        conn.execute("RESET ROLE")
+        conn.execute(sql.SQL("SET ROLE {}").format(sql.Identifier(authorizer)))
         row = conn.execute(
             """
             SELECT id,active
@@ -892,16 +911,17 @@ def test_runtime_can_contract_binding_but_not_reactivate_it(db):
             (binding,),
         ).fetchone()
         assert row == (binding, False)
-
-        with pytest.raises(psycopg.errors.InsufficientPrivilege):
-            conn.execute("UPDATE injection_bindings SET active = true WHERE id = %s", (binding,))
     finally:
         conn.execute("RESET ROLE")
-        conn.execute(sql.SQL("DROP OWNED BY {}").format(sql.Identifier(runtime)))
-        conn.execute(
-            sql.SQL("REVOKE {} FROM {}").format(sql.Identifier(runtime), sql.Identifier(current_user))
-        )
-        conn.execute(sql.SQL("DROP ROLE IF EXISTS {}").format(sql.Identifier(runtime)))
+        for role in [runtime, authorizer]:
+            conn.execute(sql.SQL("DROP OWNED BY {}").format(sql.Identifier(role)))
+            conn.execute(
+                sql.SQL("REVOKE {} FROM {}").format(
+                    sql.Identifier(role),
+                    sql.Identifier(current_user),
+                )
+            )
+            conn.execute(sql.SQL("DROP ROLE IF EXISTS {}").format(sql.Identifier(role)))
 
 
 def test_one_role_cannot_be_both_runtime_and_authorizer(db):
