@@ -101,7 +101,7 @@ RETURNS boolean
 LANGUAGE sql
 IMMUTABLE
 STRICT
-AS $
+AS $$
     SELECT jsonb_typeof(p_value) = 'object'
        AND p_value <> '{}'::jsonb
        AND NOT EXISTS (
@@ -111,7 +111,7 @@ AS $
                 OR jsonb_typeof(item.value) <> 'string'
                 OR btrim(item.value #>> '{}') = ''
        );
-$;
+$$;
 
 CREATE TABLE promotions (
     id uuid PRIMARY KEY,
@@ -153,7 +153,7 @@ CREATE TABLE injection_bindings (
     UNIQUE (promotion_id, adapter, selector_digest)
 );
 
-CREATE FUNCTION validate_injection_binding_insert() RETURNS trigger AS $
+CREATE FUNCTION validate_injection_binding_insert() RETURNS trigger AS $$
 DECLARE
     authorized_scope jsonb;
     promotion_revision integer;
@@ -185,9 +185,9 @@ BEGIN
 
     RETURN NEW;
 END;
-$ LANGUAGE plpgsql;
+$$ LANGUAGE plpgsql;
 
-CREATE FUNCTION protect_injection_binding_mutation() RETURNS trigger AS $
+CREATE FUNCTION protect_injection_binding_mutation() RETURNS trigger AS $$
 BEGIN
     IF TG_OP = 'DELETE' THEN
         RAISE EXCEPTION 'injection bindings are historical evidence and cannot be deleted';
@@ -210,7 +210,7 @@ BEGIN
 
     RETURN NEW;
 END;
-$ LANGUAGE plpgsql;
+$$ LANGUAGE plpgsql;
 
 CREATE TABLE worker_jobs (
     id uuid PRIMARY KEY,
