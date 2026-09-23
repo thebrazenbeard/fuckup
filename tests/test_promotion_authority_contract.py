@@ -45,7 +45,11 @@ def test_binding_restrictions_are_monotonic():
 
 def test_authorized_promotion_requires_provenance_reference():
     assert "ADD COLUMN authorization_ref text" in AUTHORITY
-    assert "promotion authorization_ref is required" in AUTHORITY
+    assert "preexisting promotions require explicit authorization-continuity reconciliation" in AUTHORITY
+    assert "ALTER COLUMN authorization_ref SET NOT NULL" in AUTHORITY
+    assert "promotions_authorization_ref_format_ck" in AUTHORITY
+    assert "promotions_authorization_ref_uq" in AUTHORITY
+    assert "promotion authorization_ref must be a sha256 content digest" in AUTHORITY
     assert "approved_by is required at the authorizer boundary" in AUTHORITY
 
 
