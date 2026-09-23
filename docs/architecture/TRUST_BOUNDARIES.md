@@ -45,11 +45,18 @@ PostgreSQL independently enforces durable minimum invariants:
 - `allow=true` policy assertion;
 - currentness;
 - non-terminal lifecycle state;
-- non-empty activation and rollback contracts.
+- selector-shaped activation scope;
+- binding scope no broader than the approved activation scope;
+- monotonic binding restriction.
 
-The database cannot prove that an arbitrary JSON policy assertion was generated
-by the intended policy engine. Applications crossing an untrusted boundary must
-re-evaluate policy before inserting a promotion.
+The generic runtime cannot insert promotions or bindings. Promotion/binding
+creation is routed through guarded functions executable only by a separately
+configured authorizer role, and each authority role is durably bound to exactly
+one role kind.
 
-Future cryptographic policy attestations may strengthen that boundary, but are
-not required for the core protocol.
+This role separation does not make arbitrary policy JSON magically true. The
+authorizer is the trusted boundary that must call `authorize_promotion(...)` (or
+an equivalently controlled policy engine) before invoking the database creation
+function. Each promotion also carries a non-empty `authorization_ref` for
+provenance. A future cryptographic attestation can replace that trust assumption
+without changing the runtime/authorizer separation.
