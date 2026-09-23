@@ -30,7 +30,7 @@ def test_authorization_recomputes_validation_and_policy():
         qualification=_qualification(correction),
         root_cause_supported=True,
         ambiguous=False,
-        activation_scope="agent:demo",
+        activation_scope={"agent": "demo"},
         rollback_condition="revoke on regression",
     )
     assert auth.validation.passed
@@ -44,8 +44,22 @@ def test_authorization_fails_closed_on_bad_qualification():
         qualification=_qualification(correction, fail_kind=TestKind.RETAIN),
         root_cause_supported=True,
         ambiguous=False,
-        activation_scope="agent:demo",
+        activation_scope={"agent": "demo"},
         rollback_condition="revoke on regression",
     )
     assert not auth.validation.passed
     assert not auth.decision.allow
+
+
+def test_authorization_rejects_non_selector_activation_scope():
+    correction = CorrectionRevision("c1", 1, "sha256:a", {"rule": "x"})
+    auth = authorize_promotion(
+        correction=correction,
+        qualification=_qualification(correction),
+        root_cause_supported=True,
+        ambiguous=False,
+        activation_scope={"agent": {"nested": "not-allowed"}},
+        rollback_condition="revoke on regression",
+    )
+    assert not auth.decision.allow
+    assert any("flat selector" in reason for reason in auth.decision.reasons)
