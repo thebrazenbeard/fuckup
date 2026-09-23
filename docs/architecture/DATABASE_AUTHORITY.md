@@ -30,12 +30,13 @@ The runtime role receives:
 
 - read access to the current data model;
 - carefully scoped INSERT privileges for ordinary domain facts;
-- EXECUTE on guarded event and worker functions;
-- guarded authority to *contract* an existing effect by revoking a promotion,
-  deactivating a binding, or shortening its expiry.
+- EXECUTE on guarded event and worker functions.
 
-Promotion and binding creation are protected effects. The runtime role receives
-no direct INSERT/UPDATE authority on `promotions` or `injection_bindings`.
+Promotion and binding publication are protected effects. The runtime role
+receives no direct or guarded mutation authority on `promotions` or
+`injection_bindings`: it cannot create, bind, revoke, deactivate, reactivate,
+or change expiry. It can report evidence that should cause rollback, but the
+separate authorizer applies that protected effect.
 
 It does **not** receive direct authority to:
 
@@ -81,10 +82,10 @@ The owner-only functions:
 bind each clean leaf role to exactly one authority kind. The same role cannot be
 configured as both runtime and authorizer.
 
-The runtime configurator removes promotion/binding DML left by the earlier
-authority layer and grants only monotonic contraction helpers. The authorizer
-receives SELECT plus EXECUTE on guarded promotion/binding creation functions; it
-does not receive direct table DML.
+The runtime configurator verifies that no promotion/binding DML authority is
+present. The authorizer receives SELECT plus EXECUTE on guarded
+promotion/binding creation, revocation, and restriction functions; it does not
+receive direct table DML.
 
 ## Qualification requirement
 
