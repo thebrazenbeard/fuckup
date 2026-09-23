@@ -133,6 +133,8 @@ DECLARE
         'validate_promotion_insert()',
         'promotion_insert_effects()',
         'promotion_revocation_effects()',
+        'validate_injection_binding_insert()',
+        'protect_injection_binding_mutation()',
         'claim_worker_job(text,integer)',
         'complete_worker_job(uuid,text)',
         'fail_worker_job(uuid,text,jsonb,boolean,integer)'
@@ -250,10 +252,9 @@ BEGIN
         s, p_role
     );
 
-    EXECUTE format(
-        'GRANT INSERT (id, correction_id, correction_revision, exact_subject_digest, qualification_id, qualification_result, policy_name, policy_version, policy_decision, approved_by, activation_scope, rollback_condition) ON %I.promotions TO %I',
-        s, p_role
-    );
+    -- Promotion creation is a protected policy effect. The generic runtime
+    -- may revoke an existing promotion, but cannot create one by asserting its
+    -- own policy_decision or activation_scope.
     EXECUTE format(
         'GRANT UPDATE (revoked_at) ON %I.promotions TO %I',
         s, p_role
@@ -332,6 +333,9 @@ BEGIN
           )
        OR pg_catalog.has_table_privilege(
             p_role, pg_catalog.format('%I.%I', s, 'events'), 'DELETE, TRUNCATE'
+          )
+       OR pg_catalog.has_any_column_privilege(
+            p_role, pg_catalog.format('%I.%I', s, 'promotions'), 'INSERT'
           )
        OR pg_catalog.has_any_column_privilege(
             p_role, pg_catalog.format('%I.%I', s, 'outbox'), 'INSERT'
