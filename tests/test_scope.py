@@ -18,3 +18,8 @@ def test_selector_can_only_add_constraints_to_approved_scope():
     assert selector_within_scope({"agent": "demo", "model": "x"}, approved)
     assert not selector_within_scope({"agent": "other"}, approved)
     assert not selector_within_scope({"model": "x"}, approved)
+
+
+def test_boolean_scope_does_not_alias_numeric_selector():
+    assert not selector_within_scope({"enabled": 1}, {"enabled": True})
+    assert not selector_within_scope({"enabled": True}, {"enabled": 1})
