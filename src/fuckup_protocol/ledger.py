@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 from typing import Any, Callable, Mapping
 from uuid import uuid4
 
+from .authorization import PromotionAuthorization
 from .contracts import JsonObject, freeze_json_object
 from .models import CorrectionRevision, PolicyDecision, QualificationResult
 from .scope import SelectorScope, freeze_selector_scope
@@ -80,6 +81,9 @@ class PromotionRecord:
     activation_scope: SelectorScope
     rollback_condition: JsonObject
     policy_decision: PolicyDecision
+    policy_name: str
+    policy_version: str
+    authorization_ref: str
     activated_at: datetime
     revoked_at: datetime | None = None
 
@@ -251,30 +255,41 @@ class InMemoryLedger:
         correction_id: str,
         correction_revision: int,
         qualification_id: str,
-        activation_scope: SelectorScope,
-        rollback_condition: JsonObject,
-        policy_decision: PolicyDecision,
+        authorization: PromotionAuthorization,
     ) -> PromotionRecord:
-        if not policy_decision.allow:
-            raise PromotionRejectedError("policy decision rejected promotion")
+        if not authorization.decision.allow or authorization.authorization_ref is None:
+            raise PromotionRejectedError("promotion authorization was not granted")
+        if authorization.activation_scope is None or authorization.rollback_condition is None:
+            raise PromotionRejectedError("promotion authorization is missing bound effect contracts")
+
         family = self._corrections[correction_id]
         current = family.current
         if current.revision != correction_revision:
             raise StaleQualificationError("only the current correction revision may be promoted")
+
         qualification = self._qualifications[qualification_id]
         if not qualification.matches(current):
             raise StaleQualificationError("qualification is stale for the current correction revision")
-        if not ValidationReport.evaluate(current, qualification).passed:
+
+        expected_validation = ValidationReport.evaluate(current, qualification)
+        if not expected_validation.passed:
             raise PromotionRejectedError("qualification did not pass required validation")
+        if authorization.validation != expected_validation:
+            raise PromotionRejectedError(
+                "promotion authorization is not bound to the recorded qualification"
+            )
 
         promotion = PromotionRecord(
             id=self._id_factory(),
             correction_id=correction_id,
             correction_revision=correction_revision,
             qualification_id=qualification_id,
-            activation_scope=activation_scope,
-            rollback_condition=rollback_condition,
-            policy_decision=policy_decision,
+            activation_scope=authorization.activation_scope,
+            rollback_condition=authorization.rollback_condition,
+            policy_decision=authorization.decision,
+            policy_name=authorization.policy_name,
+            policy_version=authorization.policy_version,
+            authorization_ref=authorization.authorization_ref,
             activated_at=_utcnow(),
         )
         self._promotions[promotion.id] = promotion
@@ -292,6 +307,9 @@ class InMemoryLedger:
             activation_scope=current.activation_scope,
             rollback_condition=current.rollback_condition,
             policy_decision=current.policy_decision,
+            policy_name=current.policy_name,
+            policy_version=current.policy_version,
+            authorization_ref=current.authorization_ref,
             activated_at=current.activated_at,
             revoked_at=revoked_at or _utcnow(),
         )
