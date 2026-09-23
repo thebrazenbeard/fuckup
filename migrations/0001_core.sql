@@ -96,6 +96,23 @@ CREATE TABLE qualifications (
         REFERENCES correction_revisions(correction_id, revision, subject_digest)
 );
 
+CREATE FUNCTION jsonb_is_nonempty_string_map(p_value jsonb)
+RETURNS boolean
+LANGUAGE sql
+IMMUTABLE
+STRICT
+AS $
+    SELECT jsonb_typeof(p_value) = 'object'
+       AND p_value <> '{}'::jsonb
+       AND NOT EXISTS (
+            SELECT 1
+              FROM jsonb_each(p_value) AS item(key, value)
+             WHERE btrim(item.key) = ''
+                OR jsonb_typeof(item.value) <> 'string'
+                OR btrim(item.value #>> '{}') = ''
+       );
+$;
+
 CREATE TABLE promotions (
     id uuid PRIMARY KEY,
     correction_id uuid NOT NULL,
@@ -112,9 +129,9 @@ CREATE TABLE promotions (
         ),
     approved_by text,
     activation_scope jsonb NOT NULL
-        CHECK (jsonb_typeof(activation_scope) = 'object' AND activation_scope <> '{}'::jsonb),
+        CHECK (jsonb_is_nonempty_string_map(activation_scope)),
     rollback_condition jsonb NOT NULL
-        CHECK (jsonb_typeof(rollback_condition) = 'object' AND rollback_condition <> '{}'::jsonb),
+        CHECK (jsonb_is_nonempty_string_map(rollback_condition)),
     activated_at timestamptz NOT NULL DEFAULT now(),
     revoked_at timestamptz,
     FOREIGN KEY (qualification_id, correction_id, correction_revision, exact_subject_digest, qualification_result)
@@ -126,8 +143,8 @@ CREATE TABLE injection_bindings (
     id uuid PRIMARY KEY,
     promotion_id uuid NOT NULL REFERENCES promotions(id),
     adapter text NOT NULL,
-    selector jsonb NOT NULL,
-    selector_digest text NOT NULL,
+    selector jsonb NOT NULL CHECK (jsonb_is_nonempty_string_map(selector)),
+    selector_digest text NOT NULL CHECK (btrim(selector_digest) <> ''),
     priority integer NOT NULL DEFAULT 0,
     conflict_policy text NOT NULL DEFAULT 'FAIL_CLOSED',
     expires_at timestamptz,
@@ -135,6 +152,65 @@ CREATE TABLE injection_bindings (
     created_at timestamptz NOT NULL DEFAULT now(),
     UNIQUE (promotion_id, adapter, selector_digest)
 );
+
+CREATE FUNCTION validate_injection_binding_insert() RETURNS trigger AS $
+DECLARE
+    authorized_scope jsonb;
+    promotion_revision integer;
+    current_revision integer;
+    correction_status text;
+    promotion_revoked_at timestamptz;
+BEGIN
+    SELECT p.activation_scope, p.correction_revision, p.revoked_at,
+           c.current_revision, c.status
+      INTO authorized_scope, promotion_revision, promotion_revoked_at,
+           current_revision, correction_status
+      FROM promotions p
+      JOIN corrections c ON c.id = p.correction_id
+     WHERE p.id = NEW.promotion_id
+     FOR SHARE OF p, c;
+
+    IF authorized_scope IS NULL THEN
+        RAISE EXCEPTION 'binding references unknown promotion %', NEW.promotion_id;
+    END IF;
+    IF promotion_revoked_at IS NOT NULL THEN
+        RAISE EXCEPTION 'binding cannot target a revoked promotion';
+    END IF;
+    IF correction_status <> 'ACTIVE' OR current_revision <> promotion_revision THEN
+        RAISE EXCEPTION 'binding requires the current ACTIVE correction revision';
+    END IF;
+    IF NOT (NEW.selector @> authorized_scope) THEN
+        RAISE EXCEPTION 'binding selector exceeds authorized activation scope';
+    END IF;
+
+    RETURN NEW;
+END;
+$ LANGUAGE plpgsql;
+
+CREATE FUNCTION protect_injection_binding_mutation() RETURNS trigger AS $
+BEGIN
+    IF TG_OP = 'DELETE' THEN
+        RAISE EXCEPTION 'injection bindings are historical evidence and cannot be deleted';
+    END IF;
+
+    IF (to_jsonb(NEW) - 'active' - 'expires_at')
+       IS DISTINCT FROM
+       (to_jsonb(OLD) - 'active' - 'expires_at') THEN
+        RAISE EXCEPTION 'binding identity and scope are immutable after creation';
+    END IF;
+
+    IF OLD.active = false AND NEW.active = true THEN
+        RAISE EXCEPTION 'binding reactivation requires fresh authorization';
+    END IF;
+
+    IF OLD.expires_at IS NOT NULL
+       AND (NEW.expires_at IS NULL OR NEW.expires_at > OLD.expires_at) THEN
+        RAISE EXCEPTION 'binding expiry may only stay the same or move earlier';
+    END IF;
+
+    RETURN NEW;
+END;
+$ LANGUAGE plpgsql;
 
 CREATE TABLE worker_jobs (
     id uuid PRIMARY KEY,
@@ -602,6 +678,14 @@ CREATE TRIGGER promotion_revoke_effects
     FOR EACH ROW
     WHEN (OLD.revoked_at IS NULL AND NEW.revoked_at IS NOT NULL)
     EXECUTE FUNCTION promotion_revocation_effects();
+
+CREATE TRIGGER injection_binding_validate
+    BEFORE INSERT ON injection_bindings
+    FOR EACH ROW EXECUTE FUNCTION validate_injection_binding_insert();
+
+CREATE TRIGGER injection_binding_protect
+    BEFORE UPDATE OR DELETE ON injection_bindings
+    FOR EACH ROW EXECUTE FUNCTION protect_injection_binding_mutation();
 
 CREATE TRIGGER events_append_only
     BEFORE UPDATE OR DELETE ON events
