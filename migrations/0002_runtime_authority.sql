@@ -134,7 +134,7 @@ $secure_functions$ LANGUAGE plpgsql;
 -- The role must already exist. This function does not CREATE ROLE and is not
 -- executable by PUBLIC.
 CREATE FUNCTION configure_fuckup_runtime_role(p_role name)
-RETURNS void AS $
+RETURNS void AS $$
 DECLARE
     s name := current_schema();
     runtime_oid oid;
@@ -284,7 +284,7 @@ BEGIN
         RAISE EXCEPTION 'runtime role % retains forbidden effective privileges', p_role;
     END IF;
 END;
-$ LANGUAGE plpgsql SECURITY DEFINER;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
 
 DO $secure_config$
 DECLARE
