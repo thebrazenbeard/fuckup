@@ -1,0 +1,34 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/thebrazenbeard/fuckup/schema/fuckup-event.schema.json",
+  "title": "F.U.C.K.U.P. CloudEvent",
+  "type": "object",
+  "additionalProperties": true,
+  "required": ["specversion", "id", "source", "type", "subject", "time", "datacontenttype", "data"],
+  "properties": {
+    "specversion": {"const": "1.0"},
+    "id": {"type": "string", "minLength": 1},
+    "source": {"type": "string", "minLength": 1},
+    "type": {"type": "string", "pattern": "^org\\.fuckup\\."},
+    "subject": {"type": "string", "minLength": 1},
+    "time": {"type": "string", "format": "date-time"},
+    "datacontenttype": {"const": "application/json"},
+    "traceparent": {"type": "string"},
+    "data": {"type": "object"},
+    "fuckupprovenance": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["kind", "ref"],
+        "properties": {
+          "kind": {"enum": ["TRACE", "SPAN", "EVENT", "FILE", "COMMIT", "RUN", "DATASET", "ATTESTATION", "OTHER"]},
+          "ref": {"type": "string", "minLength": 1},
+          "digest": {"type": ["string", "null"]},
+          "media_type": {"type": ["string", "null"]},
+          "source": {"type": ["string", "null"]}
+        },
+        "additionalProperties": false
+      }
+    }
+  }
+}
