@@ -1,0 +1,50 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/thebrazenbeard/fuckup/schema/fuckup-record.schema.json",
+  "title": "F.U.C.K.U.P. Runtime Record",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["protocol", "version", "record_id", "state", "subject", "trigger", "flag", "understand", "calibrate", "know", "unlearn", "prevent", "validation", "provenance"],
+  "properties": {
+    "protocol": {"const": "FUCKUP"},
+    "version": {"type": "string", "minLength": 1},
+    "record_id": {"type": "string", "minLength": 1},
+    "state": {"enum": ["DETECTED", "UNDER_ANALYSIS", "AMBIGUOUS", "ROOT_CAUSE_PROPOSED", "CORRECTION_PROPOSED", "QUALIFYING", "QUALIFIED", "REJECTED", "BLOCKED_POLICY", "PROMOTED", "ACTIVE", "SUPERSEDED", "REVOKED", "DUPLICATE", "DEAD_LETTERED", "STALE_QUALIFICATION"]},
+    "subject": {
+      "type": "object",
+      "required": ["kind", "id"],
+      "properties": {
+        "kind": {"enum": ["model", "agent", "human", "process", "organization", "software"]},
+        "id": {"type": "string", "minLength": 1},
+        "version": {"type": ["string", "null"]}
+      },
+      "additionalProperties": true
+    },
+    "trigger": {"type": "object", "additionalProperties": true},
+    "flag": {"type": "object", "additionalProperties": true},
+    "understand": {"type": "object", "additionalProperties": true},
+    "calibrate": {"type": "object", "additionalProperties": true},
+    "know": {"type": "object", "additionalProperties": true},
+    "unlearn": {
+      "type": "object",
+      "required": ["target", "replacement"],
+      "properties": {
+        "target": {
+          "type": "object",
+          "required": ["layer", "identifier"],
+          "properties": {
+            "layer": {"enum": ["context", "memory", "prompt", "policy", "retrieval", "adapter", "weights", "process"]},
+            "identifier": {"type": "string", "minLength": 1}
+          },
+          "additionalProperties": true
+        },
+        "replacement": {},
+        "rollback": {}
+      },
+      "additionalProperties": true
+    },
+    "prevent": {"type": "object", "additionalProperties": true},
+    "validation": {"type": "object", "additionalProperties": true},
+    "provenance": {"type": "object", "additionalProperties": true}
+  }
+}
