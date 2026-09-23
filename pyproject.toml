@@ -15,6 +15,10 @@ test = [
   "hypothesis>=6.0",
   "jsonschema>=4.23",
 ]
+postgres-test = [
+  "pytest>=8.0",
+  "psycopg[binary]>=3.2",
+]
 
 [tool.setuptools.packages.find]
 where = ["src"]
