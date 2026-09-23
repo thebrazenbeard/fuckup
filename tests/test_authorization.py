@@ -156,3 +156,22 @@ def test_authorization_freezes_nested_rollback_contract():
 
     assert tuple(auth.rollback_condition["conditions"]) == ("regression",)
     assert auth.authorization_ref == first_ref
+
+
+
+def test_authorization_rejects_empty_explicit_policy_identity():
+    correction = CorrectionRevision("c1", 1, "sha256:a", {"rule": "x"})
+    try:
+        authorize_promotion(
+            correction=correction,
+            qualification=_qualification(correction),
+            root_cause_supported=True,
+            ambiguous=False,
+            activation_scope={"agent": "demo"},
+            rollback_condition={"action": "revoke"},
+            policy_name="",
+        )
+    except ValueError as exc:
+        assert "policy_name" in str(exc)
+    else:
+        raise AssertionError("empty explicit policy_name must fail closed")
