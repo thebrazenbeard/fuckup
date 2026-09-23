@@ -1,7 +1,26 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from types import MappingProxyType
 from typing import Mapping
+
+
+def _freeze_selector(value: Mapping[str, str], *, field: str) -> Mapping[str, str]:
+    normalized: dict[str, str] = {}
+    for key, item in value.items():
+        if not isinstance(key, str) or not key.strip():
+            raise ValueError(f"{field} keys must be non-empty strings")
+        if not isinstance(item, str) or not item.strip():
+            raise ValueError(f"{field} values must be non-empty strings")
+        normalized[key] = item
+    if not normalized:
+        raise ValueError(f"{field} must not be empty")
+    return MappingProxyType(normalized)
+
+
+def selector_within_scope(selector: Mapping[str, str], activation_scope: Mapping[str, str]) -> bool:
+    """Return True when selector is equal to or narrower than authorization scope."""
+    return bool(activation_scope) and all(selector.get(key) == value for key, value in activation_scope.items())
 
 
 @dataclass(frozen=True, slots=True)
@@ -10,12 +29,19 @@ class InjectionBinding:
     correction_id: str
     correction_revision: int
     selector: Mapping[str, str]
+    activation_scope: Mapping[str, str]
     priority: int = 0
     active: bool = True
 
     def __post_init__(self) -> None:
         if self.correction_revision < 1:
             raise ValueError("correction_revision must be >= 1")
+        selector = _freeze_selector(self.selector, field="selector")
+        scope = _freeze_selector(self.activation_scope, field="activation_scope")
+        if not selector_within_scope(selector, scope):
+            raise ValueError("binding selector must be equal to or narrower than activation scope")
+        object.__setattr__(self, "selector", selector)
+        object.__setattr__(self, "activation_scope", scope)
 
     @property
     def specificity(self) -> int:
@@ -30,14 +56,7 @@ class BindingConflictError(ValueError):
 
 
 def resolve_binding(bindings: tuple[InjectionBinding, ...], context: Mapping[str, str]) -> InjectionBinding | None:
-    """Resolve one binding deterministically or fail closed on an unresolved tie.
-
-    Precedence:
-    1. highest explicit priority;
-    2. narrowest/more-specific selector;
-    3. newer revision only when candidates belong to the same correction family;
-    4. otherwise fail closed rather than relying on input/retrieval order.
-    """
+    """Resolve one binding deterministically or fail closed on an unresolved tie."""
 
     candidates = [binding for binding in bindings if binding.matches(context)]
     if not candidates:
