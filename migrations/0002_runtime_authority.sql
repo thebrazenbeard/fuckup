@@ -251,28 +251,12 @@ BEGIN
     );
 
     EXECUTE format(
-        'GRANT INSERT (id, correction_id, correction_revision, exact_subject_digest, qualification_id, qualification_result, policy_name, policy_version, policy_decision, approved_by, activation_scope, rollback_condition) ON %I.promotions TO %I',
-        s, p_role
-    );
-    EXECUTE format(
-        'GRANT UPDATE (revoked_at) ON %I.promotions TO %I',
-        s, p_role
-    );
-
-    EXECUTE format(
-        'GRANT INSERT (id, promotion_id, adapter, selector, selector_digest, priority, conflict_policy, expires_at) ON %I.injection_bindings TO %I',
-        s, p_role
-    );
-    EXECUTE format(
-        'GRANT UPDATE (active, expires_at) ON %I.injection_bindings TO %I',
-        s, p_role
-    );
-
-    EXECUTE format(
         'GRANT INSERT (id, job_type, payload, effect_digest, work_key, idempotency_key, max_attempts, available_at) ON %I.worker_jobs TO %I',
         s, p_role
     );
 
+    -- Promotion and binding activation are protected authorizer effects.
+    -- The generic runtime receives no direct promotion/binding DML.
     -- No direct INSERT/UPDATE/DELETE on events, outbox, correction projection
     -- fields, job state/lease fields, correction revisions, or qualifications.
     EXECUTE format(
