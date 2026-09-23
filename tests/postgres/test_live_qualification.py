@@ -924,3 +924,28 @@ def test_one_role_cannot_be_both_runtime_and_authorizer(db):
     finally:
         conn.execute(sql.SQL("DROP OWNED BY {}").format(sql.Identifier(role)))
         conn.execute(sql.SQL("DROP ROLE IF EXISTS {}").format(sql.Identifier(role)))
+
+
+
+def test_new_binding_rejected_after_promotion_becomes_stale(db):
+    conn, _ = db
+    incident, correction, qualification, promotion, binding, *_ = _ids()
+    _incident(conn, incident)
+    _correction(conn, incident, correction, digest="sha256:r1")
+    _qualification(conn, qualification, correction, 1, "sha256:r1")
+    _promotion(conn, promotion, correction, 1, "sha256:r1", qualification)
+
+    _correction(conn, incident, correction, digest="sha256:r2", revision=2)
+
+    with pytest.raises(psycopg.Error, match="stale or inactive promotion"):
+        conn.execute(
+            """
+            INSERT INTO injection_bindings(
+                id,promotion_id,adapter,selector,selector_digest
+            )
+            VALUES (
+                %s,%s,'memory','{"agent":"demo"}'::jsonb,'sha256:stale'
+            )
+            """,
+            (binding, promotion),
+        )
