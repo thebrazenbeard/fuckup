@@ -546,3 +546,36 @@ def test_configured_runtime_role_can_use_guarded_worker_lifecycle(db):
             )
         )
         conn.execute(sql.SQL("DROP ROLE IF EXISTS {}").format(sql.Identifier(runtime)))
+
+
+def test_runtime_role_rejects_public_column_privilege_bypass(db):
+    conn, schema = db
+    privilege = conn.execute(
+        """
+        SELECT rolsuper OR rolcreaterole
+        FROM pg_catalog.pg_roles
+        WHERE rolname = current_user
+        """
+    ).fetchone()[0]
+    if not privilege:
+        pytest.skip("test database user needs SUPERUSER or CREATEROLE for role qualification")
+
+    runtime = f"fuckup_runtime_{uuid4().hex[:16]}"
+
+    try:
+        conn.execute(sql.SQL("CREATE ROLE {} NOLOGIN").format(sql.Identifier(runtime)))
+        conn.execute(
+            sql.SQL("GRANT UPDATE (current_revision) ON {}.corrections TO PUBLIC").format(
+                sql.Identifier(schema)
+            )
+        )
+
+        with pytest.raises(psycopg.Error, match="retains forbidden effective privileges"):
+            conn.execute("SELECT configure_fuckup_runtime_role(%s::name)", (runtime,))
+    finally:
+        conn.execute(
+            sql.SQL("REVOKE UPDATE (current_revision) ON {}.corrections FROM PUBLIC").format(
+                sql.Identifier(schema)
+            )
+        )
+        conn.execute(sql.SQL("DROP ROLE IF EXISTS {}").format(sql.Identifier(runtime)))

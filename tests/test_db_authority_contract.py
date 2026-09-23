@@ -69,6 +69,7 @@ def test_runtime_role_must_be_isolated_leaf_without_admin_escape_hatches():
 def test_runtime_role_effective_forbidden_privileges_are_verified():
     assert "pg_catalog.has_schema_privilege" in AUTHORITY
     assert "pg_catalog.has_table_privilege" in AUTHORITY
+    assert "pg_catalog.has_any_column_privilege" in AUTHORITY
     assert "retains forbidden effective privileges" in AUTHORITY
 
 

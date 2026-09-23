@@ -257,28 +257,28 @@ BEGIN
     -- ownership or unexpected privilege inheritance that would defeat the
     -- least-privilege contract.
     IF pg_catalog.has_schema_privilege(p_role, s, 'CREATE')
-       OR pg_catalog.has_table_privilege(
+       OR pg_catalog.has_any_column_privilege(
             p_role, pg_catalog.format('%I.%I', s, 'corrections'), 'UPDATE'
           )
-       OR pg_catalog.has_table_privilege(
+       OR pg_catalog.has_any_column_privilege(
             p_role, pg_catalog.format('%I.%I', s, 'events'), 'INSERT'
           )
-       OR pg_catalog.has_table_privilege(
+       OR pg_catalog.has_any_column_privilege(
             p_role, pg_catalog.format('%I.%I', s, 'events'), 'UPDATE'
           )
        OR pg_catalog.has_table_privilege(
             p_role, pg_catalog.format('%I.%I', s, 'events'), 'DELETE'
           )
-       OR pg_catalog.has_table_privilege(
+       OR pg_catalog.has_any_column_privilege(
             p_role, pg_catalog.format('%I.%I', s, 'outbox'), 'INSERT'
           )
-       OR pg_catalog.has_table_privilege(
+       OR pg_catalog.has_any_column_privilege(
             p_role, pg_catalog.format('%I.%I', s, 'outbox'), 'UPDATE'
           )
        OR pg_catalog.has_table_privilege(
             p_role, pg_catalog.format('%I.%I', s, 'outbox'), 'DELETE'
           )
-       OR pg_catalog.has_table_privilege(
+       OR pg_catalog.has_any_column_privilege(
             p_role, pg_catalog.format('%I.%I', s, 'worker_jobs'), 'UPDATE'
           ) THEN
         RAISE EXCEPTION 'runtime role % retains forbidden effective privileges', p_role;
