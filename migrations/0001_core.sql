@@ -103,16 +103,18 @@ CREATE TABLE promotions (
     exact_subject_digest text NOT NULL,
     qualification_id uuid NOT NULL,
     qualification_result text NOT NULL DEFAULT 'PASS' CHECK (qualification_result = 'PASS'),
-    policy_name text NOT NULL,
-    policy_version text NOT NULL,
+    policy_name text NOT NULL CHECK (btrim(policy_name) <> ''),
+    policy_version text NOT NULL CHECK (btrim(policy_version) <> ''),
     policy_decision jsonb NOT NULL
         CHECK (
             jsonb_typeof(policy_decision) = 'object'
             AND policy_decision @> '{"allow": true}'::jsonb
         ),
     approved_by text,
-    activation_scope jsonb NOT NULL CHECK (activation_scope <> '{}'::jsonb),
-    rollback_condition jsonb NOT NULL CHECK (rollback_condition <> '{}'::jsonb),
+    activation_scope jsonb NOT NULL
+        CHECK (jsonb_typeof(activation_scope) = 'object' AND activation_scope <> '{}'::jsonb),
+    rollback_condition jsonb NOT NULL
+        CHECK (jsonb_typeof(rollback_condition) = 'object' AND rollback_condition <> '{}'::jsonb),
     activated_at timestamptz NOT NULL DEFAULT now(),
     revoked_at timestamptz,
     FOREIGN KEY (qualification_id, correction_id, correction_revision, exact_subject_digest, qualification_result)
@@ -195,7 +197,82 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE FUNCTION validate_correction_revision_insert() RETURNS trigger AS $$
+CREATE FUNCTION record_event_idempotent(
+    p_id uuid,
+    p_incident_id uuid,
+    p_event_type text,
+    p_actor text,
+    p_payload jsonb,
+    p_payload_digest text,
+    p_effect_digest text,
+    p_occurred_at timestamptz,
+    p_provenance jsonb,
+    p_idempotency_key text
+)
+RETURNS SETOF events AS $
+DECLARE
+    existing events%ROWTYPE;
+BEGIN
+    IF p_idempotency_key IS NULL THEN
+        RETURN QUERY
+        INSERT INTO events(
+            id, incident_id, event_type, actor, payload, payload_digest,
+            effect_digest, occurred_at, provenance, idempotency_key
+        )
+        VALUES (
+            p_id, p_incident_id, p_event_type, p_actor, COALESCE(p_payload, '{}'::jsonb),
+            p_payload_digest, NULL, p_occurred_at, COALESCE(p_provenance, '{}'::jsonb), NULL
+        )
+        RETURNING *;
+        RETURN;
+    END IF;
+
+    IF p_effect_digest IS NULL OR btrim(p_effect_digest) = '' THEN
+        RAISE EXCEPTION 'effect digest is required with an idempotency key';
+    END IF;
+
+    SELECT * INTO existing
+      FROM events
+     WHERE idempotency_key = p_idempotency_key
+     FOR SHARE;
+
+    IF FOUND THEN
+        IF existing.effect_digest IS DISTINCT FROM p_effect_digest THEN
+            RAISE EXCEPTION 'idempotency key collision for a different event effect';
+        END IF;
+        RETURN NEXT existing;
+        RETURN;
+    END IF;
+
+    BEGIN
+        RETURN QUERY
+        INSERT INTO events(
+            id, incident_id, event_type, actor, payload, payload_digest,
+            effect_digest, occurred_at, provenance, idempotency_key
+        )
+        VALUES (
+            p_id, p_incident_id, p_event_type, p_actor, COALESCE(p_payload, '{}'::jsonb),
+            p_payload_digest, p_effect_digest, p_occurred_at,
+            COALESCE(p_provenance, '{}'::jsonb), p_idempotency_key
+        )
+        RETURNING *;
+        RETURN;
+    EXCEPTION WHEN unique_violation THEN
+        SELECT * INTO existing
+          FROM events
+         WHERE idempotency_key = p_idempotency_key
+         FOR SHARE;
+
+        IF existing.effect_digest IS DISTINCT FROM p_effect_digest THEN
+            RAISE EXCEPTION 'idempotency key collision for a different event effect';
+        END IF;
+        RETURN NEXT existing;
+        RETURN;
+    END;
+END;
+$ LANGUAGE plpgsql;
+
+CREATE FUNCTION validate_correction_revision_insert() RETURNS trigger AS $
 DECLARE
     correction_incident uuid;
     expected_revision integer;
