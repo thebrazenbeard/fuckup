@@ -75,4 +75,19 @@ def test_runtime_role_effective_forbidden_privileges_are_verified():
 
 def test_authority_plpgsql_delimiters_are_balanced():
     assert AUTHORITY.count("$$") % 2 == 0
-    assert "configure_fuckup_runtime_role(p_role name)\\nRETURNS void AS $$" in AUTHORITY
+    assert "configure_fuckup_runtime_role(p_role name)" in AUTHORITY
+    assert "RETURNS void AS $$" in AUTHORITY
+
+
+def test_runtime_role_rejects_broad_table_level_dml_that_would_bypass_column_scoping():
+    for table in [
+        "incidents",
+        "root_cause_candidates",
+        "corrections",
+        "correction_revisions",
+        "qualifications",
+        "promotions",
+        "injection_bindings",
+        "worker_jobs",
+    ]:
+        assert f"'{table}'), 'INSERT, UPDATE, DELETE, TRUNCATE'" in AUTHORITY

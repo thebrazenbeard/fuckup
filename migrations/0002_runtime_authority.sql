@@ -254,9 +254,33 @@ BEGIN
     );
 
     -- Verify effective privileges, not merely direct grants. This catches
-    -- ownership or unexpected privilege inheritance that would defeat the
-    -- least-privilege contract.
+    -- ownership, PUBLIC grants, or unexpected privilege inheritance that
+    -- would defeat the least-privilege contract.
     IF pg_catalog.has_schema_privilege(p_role, s, 'CREATE')
+       OR pg_catalog.has_table_privilege(
+            p_role, pg_catalog.format('%I.%I', s, 'incidents'), 'INSERT, UPDATE, DELETE, TRUNCATE'
+          )
+       OR pg_catalog.has_table_privilege(
+            p_role, pg_catalog.format('%I.%I', s, 'root_cause_candidates'), 'INSERT, UPDATE, DELETE, TRUNCATE'
+          )
+       OR pg_catalog.has_table_privilege(
+            p_role, pg_catalog.format('%I.%I', s, 'corrections'), 'INSERT, UPDATE, DELETE, TRUNCATE'
+          )
+       OR pg_catalog.has_table_privilege(
+            p_role, pg_catalog.format('%I.%I', s, 'correction_revisions'), 'INSERT, UPDATE, DELETE, TRUNCATE'
+          )
+       OR pg_catalog.has_table_privilege(
+            p_role, pg_catalog.format('%I.%I', s, 'qualifications'), 'INSERT, UPDATE, DELETE, TRUNCATE'
+          )
+       OR pg_catalog.has_table_privilege(
+            p_role, pg_catalog.format('%I.%I', s, 'promotions'), 'INSERT, UPDATE, DELETE, TRUNCATE'
+          )
+       OR pg_catalog.has_table_privilege(
+            p_role, pg_catalog.format('%I.%I', s, 'injection_bindings'), 'INSERT, UPDATE, DELETE, TRUNCATE'
+          )
+       OR pg_catalog.has_table_privilege(
+            p_role, pg_catalog.format('%I.%I', s, 'worker_jobs'), 'INSERT, UPDATE, DELETE, TRUNCATE'
+          )
        OR pg_catalog.has_any_column_privilege(
             p_role, pg_catalog.format('%I.%I', s, 'corrections'), 'UPDATE'
           )
