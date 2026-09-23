@@ -49,13 +49,14 @@ PostgreSQL independently enforces durable minimum invariants:
 - non-empty activation and rollback contracts.
 
 The database does not treat a generic runtime assertion as policy authority.
-The generic runtime role cannot INSERT promotions. Promotion creation is
-reserved for a separate trusted policy/admin authority until a durable
-authorization artifact or attestation scheme is source-controlled.
+The generic runtime role cannot INSERT promotions or injection bindings.
+Promotion and binding creation are reserved for a separate trusted policy/admin
+authority until a durable authorization artifact or attestation scheme is
+source-controlled.
 
-Once a promotion exists, PostgreSQL carries its authority forward: binding
-selectors must be equal to or narrower than the promotion activation scope, and
-binding updates may only reduce effect through deactivation or earlier expiry.
+PostgreSQL then carries that authority forward: binding selectors must be equal
+to or narrower than the promotion activation scope, and runtime binding updates
+may only reduce effect through deactivation or earlier expiry.
 
 Future cryptographic policy attestations may allow independently verifiable
 promotion creation without granting the generic runtime policy authority.
