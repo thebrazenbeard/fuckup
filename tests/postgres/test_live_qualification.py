@@ -185,18 +185,26 @@ def test_08_supersession_hides_prior_binding_without_deleting_history(db):
     assert conn.execute("SELECT count(*) FROM corrections WHERE id = %s", (old_c,)).fetchone()[0] == 1
 
 
-def test_09_two_workers_claim_distinct_jobs(db):
+def test_09_two_workers_claim_distinct_jobs_under_lock_contention(db):
     conn, schema = db
     j1, j2, *_ = _ids()
     for jid in (j1, j2):
         conn.execute("INSERT INTO worker_jobs(id,job_type,payload) VALUES (%s,'q','{}'::jsonb)", (jid,))
+
     other = psycopg.connect(DATABASE_URL, autocommit=True, cursor_factory=ClientCursor)
     other.execute(sql.SQL("SET search_path TO {}, public").format(sql.Identifier(schema)))
+    conn.autocommit = False
     try:
         a = conn.execute("SELECT id FROM claim_worker_job('a',30)").fetchone()[0]
+        # Worker A's transaction stays open, retaining its row lock. Worker B
+        # must skip that locked row and claim the other eligible job.
         b = other.execute("SELECT id FROM claim_worker_job('b',30)").fetchone()[0]
         assert a != b
+        conn.commit()
     finally:
+        if not conn.autocommit:
+            conn.rollback()
+            conn.autocommit = True
         other.close()
 
 
