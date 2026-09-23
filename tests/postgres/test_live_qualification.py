@@ -653,3 +653,41 @@ def test_trusted_schema_is_not_writable_by_public(db):
         "SELECT pg_catalog.has_schema_privilege('public', %s, 'CREATE')",
         (schema,),
     ).fetchone()[0]
+
+
+def test_runtime_role_rejects_database_create_privilege(db):
+    conn, _schema = db
+    can_grant = conn.execute(
+        """
+        SELECT pg_catalog.has_database_privilege(
+            current_user,
+            current_database(),
+            'CREATE WITH GRANT OPTION'
+        )
+        """
+    ).fetchone()[0]
+    if not can_grant:
+        pytest.skip("test database user needs CREATE WITH GRANT OPTION on the test database")
+
+    runtime = f"fuckup_runtime_{uuid4().hex[:16]}"
+    database = conn.execute("SELECT current_database()").fetchone()[0]
+
+    try:
+        conn.execute(sql.SQL("CREATE ROLE {} NOLOGIN").format(sql.Identifier(runtime)))
+        conn.execute(
+            sql.SQL("GRANT CREATE ON DATABASE {} TO {}").format(
+                sql.Identifier(database),
+                sql.Identifier(runtime),
+            )
+        )
+
+        with pytest.raises(psycopg.Error, match="retains forbidden effective privileges"):
+            conn.execute("SELECT configure_fuckup_runtime_role(%s::name)", (runtime,))
+    finally:
+        conn.execute(
+            sql.SQL("REVOKE CREATE ON DATABASE {} FROM {}").format(
+                sql.Identifier(database),
+                sql.Identifier(runtime),
+            )
+        )
+        conn.execute(sql.SQL("DROP ROLE IF EXISTS {}").format(sql.Identifier(runtime)))

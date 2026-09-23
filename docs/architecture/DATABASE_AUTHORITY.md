@@ -107,3 +107,9 @@ runtime identity whose privilege graph is already isolated.
 Live qualification includes an inherited-parent-role attack case and proves the
 configured runtime can still claim, complete, and fail jobs through the guarded
 worker functions.
+
+
+The runtime identity must also not own the database or hold database-level
+`CREATE`. PostgreSQL explicitly treats database ownership as incompatible with
+a secure untrusted-schema model; the configurator therefore rejects that
+authority rather than trying to compensate for it.

@@ -192,6 +192,15 @@ BEGIN
         RAISE EXCEPTION 'runtime role % has forbidden administrative attributes', p_role;
     END IF;
 
+    IF EXISTS (
+        SELECT 1
+          FROM pg_catalog.pg_database
+         WHERE datname = current_database()
+           AND datdba = runtime_oid
+    ) THEN
+        RAISE EXCEPTION 'runtime role % must not own database %', p_role, current_database();
+    END IF;
+
     -- The runtime identity must be a leaf role. Direct REVOKE statements do
     -- not neutralize privileges inherited from parent roles or roles that can
     -- later be assumed through SET ROLE.
@@ -286,7 +295,8 @@ BEGIN
     -- Verify effective privileges, not merely direct grants. This catches
     -- ownership, PUBLIC grants, or unexpected privilege inheritance that
     -- would defeat the least-privilege contract.
-    IF pg_catalog.has_schema_privilege(p_role, s, 'CREATE')
+    IF pg_catalog.has_database_privilege(p_role, current_database(), 'CREATE')
+       OR pg_catalog.has_schema_privilege(p_role, s, 'CREATE')
        OR pg_catalog.has_table_privilege(
             p_role, pg_catalog.format('%I.%I', s, 'incidents'), 'INSERT, UPDATE, DELETE, TRUNCATE'
           )

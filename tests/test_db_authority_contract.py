@@ -115,3 +115,9 @@ def test_trusted_schema_itself_is_locked_against_public_object_creation():
         "ALTER DEFAULT PRIVILEGES IN SCHEMA %I REVOKE EXECUTE ON FUNCTIONS FROM PUBLIC",
     ]:
         assert token in AUTHORITY
+
+
+def test_runtime_role_cannot_own_or_create_at_database_scope():
+    assert "pg_catalog.pg_database" in AUTHORITY
+    assert "runtime role % must not own database %" in AUTHORITY
+    assert "pg_catalog.has_database_privilege(p_role, current_database(), 'CREATE')" in AUTHORITY
