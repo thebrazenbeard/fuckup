@@ -121,3 +121,14 @@ def test_runtime_role_cannot_own_or_create_at_database_scope():
     assert "pg_catalog.pg_database" in AUTHORITY
     assert "runtime role % must not own database %" in AUTHORITY
     assert "pg_catalog.has_database_privilege(p_role, current_database(), 'CREATE')" in AUTHORITY
+
+
+def test_generic_runtime_cannot_create_promotions():
+    assert "GRANT INSERT (id, correction_id, correction_revision" not in AUTHORITY
+    assert "Promotion creation is a protected policy effect" in AUTHORITY
+    assert "'promotions'), 'INSERT'" in AUTHORITY
+
+
+def test_binding_guard_functions_are_security_definer_hardened():
+    assert "'validate_injection_binding_insert()'" in AUTHORITY
+    assert "'protect_injection_binding_mutation()'" in AUTHORITY
