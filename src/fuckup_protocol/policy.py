@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Protocol
+from typing import Mapping, Protocol
 
 from .models import CorrectionRevision, PolicyDecision
 from .validation import ValidationReport
@@ -13,8 +13,8 @@ class PromotionContext:
     validation: ValidationReport
     root_cause_supported: bool
     ambiguous: bool
-    activation_scope: str | None
-    rollback_condition: str | None
+    activation_scope: Mapping[str, str] | None
+    rollback_condition: Mapping[str, str] | None
     irreversible_acknowledged: bool = False
 
 
