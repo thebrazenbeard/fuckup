@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 from typing import Any, Callable, Mapping
 from uuid import uuid4
 
+from .authorization import PromotionAuthorization
 from .models import CorrectionRevision, PolicyDecision, QualificationResult
 from .validation import ValidationReport
 
@@ -75,8 +76,8 @@ class PromotionRecord:
     correction_id: str
     correction_revision: int
     qualification_id: str
-    activation_scope: str
-    rollback_condition: str
+    activation_scope: Mapping[str, str]
+    rollback_condition: Mapping[str, str]
     policy_decision: PolicyDecision
     activated_at: datetime
     revoked_at: datetime | None = None
@@ -241,12 +242,10 @@ class InMemoryLedger:
         correction_id: str,
         correction_revision: int,
         qualification_id: str,
-        activation_scope: str,
-        rollback_condition: str,
-        policy_decision: PolicyDecision,
+        authorization: PromotionAuthorization,
     ) -> PromotionRecord:
-        if not policy_decision.allow:
-            raise PromotionRejectedError("policy decision rejected promotion")
+        if not authorization.decision.allow:
+            raise PromotionRejectedError("authorization rejected promotion")
         family = self._corrections[correction_id]
         current = family.current
         if current.revision != correction_revision:
@@ -254,17 +253,22 @@ class InMemoryLedger:
         qualification = self._qualifications[qualification_id]
         if not qualification.matches(current):
             raise StaleQualificationError("qualification is stale for the current correction revision")
-        if not ValidationReport.evaluate(current, qualification).passed:
+        canonical_validation = ValidationReport.evaluate(current, qualification)
+        if not canonical_validation.passed:
             raise PromotionRejectedError("qualification did not pass required validation")
+        if authorization.validation != canonical_validation:
+            raise PromotionRejectedError("authorization is not bound to this exact qualification")
+        if not authorization.activation_scope or not authorization.rollback_condition:
+            raise PromotionRejectedError("authorization is missing scope or rollback condition")
 
         promotion = PromotionRecord(
             id=self._id_factory(),
             correction_id=correction_id,
             correction_revision=correction_revision,
             qualification_id=qualification_id,
-            activation_scope=activation_scope,
-            rollback_condition=rollback_condition,
-            policy_decision=policy_decision,
+            activation_scope=authorization.activation_scope,
+            rollback_condition=authorization.rollback_condition,
+            policy_decision=authorization.decision,
             activated_at=_utcnow(),
         )
         self._promotions[promotion.id] = promotion
