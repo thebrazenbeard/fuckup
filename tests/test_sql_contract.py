@@ -95,3 +95,29 @@ def test_postgres_idempotency_compares_effect_fields_not_digest_only():
 def test_new_revision_resets_lifecycle_and_terminal_families_cannot_revise():
     assert "status = 'CORRECTION_PROPOSED'" in MIGRATION
     assert "terminal correction status % cannot accept a new revision" in MIGRATION
+
+
+def test_activation_scope_and_binding_selector_are_flat_nonempty_string_maps():
+    assert "jsonb_is_nonempty_string_map(activation_scope)" in MIGRATION
+    assert "jsonb_is_nonempty_string_map(rollback_condition)" in MIGRATION
+    assert "jsonb_is_nonempty_string_map(selector)" in MIGRATION
+
+
+def test_binding_insert_is_scope_and_currentness_guarded():
+    for token in [
+        "validate_injection_binding_insert",
+        "NEW.selector @> authorized_scope",
+        "binding cannot target a revoked promotion",
+        "binding requires the current ACTIVE correction revision",
+    ]:
+        assert token in MIGRATION
+
+
+def test_binding_mutation_can_only_narrow_effect():
+    for token in [
+        "protect_injection_binding_mutation",
+        "binding reactivation requires fresh authorization",
+        "binding expiry may only stay the same or move earlier",
+        "binding identity and scope are immutable after creation",
+    ]:
+        assert token in MIGRATION
