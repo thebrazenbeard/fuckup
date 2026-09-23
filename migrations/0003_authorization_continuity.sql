@@ -419,6 +419,10 @@ BEGIN
         RAISE EXCEPTION 'unknown injection binding %', p_binding_id;
     END IF;
 
+    IF p_deactivate IS NULL THEN
+        RAISE EXCEPTION 'deactivate flag must be explicit';
+    END IF;
+
     IF NOT p_deactivate AND p_new_expires_at IS NULL THEN
         RAISE EXCEPTION 'binding restriction must deactivate or set an earlier expiry';
     END IF;
@@ -523,6 +527,12 @@ BEGIN
        )
        OR pg_catalog.has_any_column_privilege(
             p_role, pg_catalog.format('%I.%I', s, 'injection_bindings'), 'UPDATE'
+       )
+       OR pg_catalog.has_any_column_privilege(
+            p_role, pg_catalog.format('%I.%I', s, 'promotion_authorizations'), 'INSERT'
+       )
+       OR pg_catalog.has_any_column_privilege(
+            p_role, pg_catalog.format('%I.%I', s, 'promotion_authorizations'), 'UPDATE'
        ) THEN
         RAISE EXCEPTION 'runtime role % retains protected promotion/binding DML authority', p_role;
     END IF;
@@ -608,23 +618,36 @@ BEGIN
     );
 
     IF pg_catalog.has_schema_privilege(p_role, s, 'CREATE')
-       OR pg_catalog.has_any_column_privilege(
-            p_role, pg_catalog.format('%I.%I', s, 'promotions'), 'INSERT'
-          )
-       OR pg_catalog.has_any_column_privilege(
-            p_role, pg_catalog.format('%I.%I', s, 'promotions'), 'UPDATE'
-          )
-       OR pg_catalog.has_any_column_privilege(
-            p_role, pg_catalog.format('%I.%I', s, 'promotion_authorizations'), 'INSERT'
-          )
-       OR pg_catalog.has_any_column_privilege(
-            p_role, pg_catalog.format('%I.%I', s, 'promotion_authorizations'), 'UPDATE'
-          )
-       OR pg_catalog.has_any_column_privilege(
-            p_role, pg_catalog.format('%I.%I', s, 'injection_bindings'), 'INSERT'
-          )
-       OR pg_catalog.has_any_column_privilege(
-            p_role, pg_catalog.format('%I.%I', s, 'injection_bindings'), 'UPDATE'
+       OR EXISTS (
+            SELECT 1
+              FROM unnest(ARRAY[
+                    'incidents',
+                    'root_cause_candidates',
+                    'corrections',
+                    'correction_revisions',
+                    'qualifications',
+                    'promotion_authorizations',
+                    'promotions',
+                    'injection_bindings',
+                    'worker_jobs',
+                    'events',
+                    'outbox'
+              ]) AS protected_table(table_name)
+             WHERE pg_catalog.has_table_privilege(
+                       p_role,
+                       pg_catalog.format('%I.%I', s, protected_table.table_name),
+                       'INSERT, UPDATE, DELETE, TRUNCATE'
+                   )
+                OR pg_catalog.has_any_column_privilege(
+                       p_role,
+                       pg_catalog.format('%I.%I', s, protected_table.table_name),
+                       'INSERT'
+                   )
+                OR pg_catalog.has_any_column_privilege(
+                       p_role,
+                       pg_catalog.format('%I.%I', s, protected_table.table_name),
+                       'UPDATE'
+                   )
           ) THEN
         RAISE EXCEPTION 'authorizer role % retains direct protected-table DML authority', p_role;
     END IF;
