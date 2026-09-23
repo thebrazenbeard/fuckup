@@ -90,7 +90,7 @@ def test_old_qualification_becomes_stale_after_revision_change():
             correction_id=correction.correction_id,
             correction_revision=1,
             qualification_id="q-1",
-            activation_scope="agent:demo",
+            activation_scope={"agent": "demo"},
             rollback_condition="revoke on regression",
             policy_decision=PolicyDecision(allow=True),
         )
@@ -107,7 +107,7 @@ def test_policy_rejection_blocks_promotion():
             correction_id=correction.correction_id,
             correction_revision=1,
             qualification_id="q-1",
-            activation_scope="agent:demo",
+            activation_scope={"agent": "demo"},
             rollback_condition="revoke on regression",
             policy_decision=PolicyDecision(allow=False, reasons=("blocked",)),
         )
@@ -122,7 +122,7 @@ def test_revocation_preserves_promotion_identity_and_history_reference():
         correction_id=correction.correction_id,
         correction_revision=1,
         qualification_id="q-1",
-        activation_scope="agent:demo",
+        activation_scope={"agent": "demo"},
         rollback_condition="revoke on regression",
         policy_decision=PolicyDecision(allow=True),
     )
@@ -159,7 +159,7 @@ def test_failed_qualification_cannot_promote_even_with_allow_policy():
             correction_id=correction.correction_id,
             correction_revision=correction.revision,
             qualification_id="q-fail",
-            activation_scope="agent:demo",
+            activation_scope={"agent": "demo"},
             rollback_condition="revoke on regression",
             policy_decision=PolicyDecision(allow=True),
         )
