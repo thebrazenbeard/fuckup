@@ -121,3 +121,13 @@ def test_runtime_role_cannot_own_or_create_at_database_scope():
     assert "pg_catalog.pg_database" in AUTHORITY
     assert "runtime role % must not own database %" in AUTHORITY
     assert "pg_catalog.has_database_privilege(p_role, current_database(), 'CREATE')" in AUTHORITY
+
+
+def test_generic_runtime_has_no_promotion_or_binding_dml_authority():
+    assert "Generic runtime" in AUTHORITY
+    assert "GRANT INSERT (id, correction_id, correction_revision" not in AUTHORITY
+    assert "GRANT UPDATE (revoked_at) ON %I.promotions" not in AUTHORITY
+    assert "GRANT INSERT (id, promotion_id, adapter, selector" not in AUTHORITY
+    assert "GRANT UPDATE (active, expires_at) ON %I.injection_bindings" not in AUTHORITY
+    assert "pg_catalog.format('%I.%I', s, 'promotions'), 'INSERT, UPDATE'" in AUTHORITY
+    assert "pg_catalog.format('%I.%I', s, 'injection_bindings'), 'INSERT, UPDATE'" in AUTHORITY
