@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from typing import Protocol
 
 from .models import CorrectionRevision, PolicyDecision
+from .scope import SelectorScope, is_selector_scope
 from .validation import ValidationReport
 
 
@@ -13,7 +14,7 @@ class PromotionContext:
     validation: ValidationReport
     root_cause_supported: bool
     ambiguous: bool
-    activation_scope: str | None
+    activation_scope: SelectorScope | None
     rollback_condition: str | None
     irreversible_acknowledged: bool = False
 
@@ -39,8 +40,8 @@ class StrictPromotionPolicy:
             reasons.append("qualification is stale for this correction revision")
         if not context.validation.passed:
             reasons.append("required validation did not pass")
-        if not context.activation_scope:
-            reasons.append("activation scope is required")
+        if not is_selector_scope(context.activation_scope):
+            reasons.append("activation scope must be a non-empty flat selector of JSON scalar values")
         if not context.rollback_condition:
             reasons.append("rollback/revocation condition is required")
         if not context.correction.reversible and not context.irreversible_acknowledged:
