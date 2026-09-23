@@ -73,3 +73,14 @@ def test_promotion_revocation_and_supersession_write_outbox_atomically():
 
 def test_cross_incident_root_cause_link_is_rejected():
     assert "root-cause candidate belongs to a different incident" in MIGRATION
+
+
+def test_revocation_cannot_precede_activation():
+    assert "revocation cannot precede activation" in MIGRATION
+    assert "NEW.revoked_at < OLD.activated_at" in MIGRATION
+
+
+def test_plpgsql_function_delimiters_are_balanced():
+    assert MIGRATION.count("$$") % 2 == 0
+    assert "RETURNS SETOF events AS $$" in MIGRATION
+    assert "validate_correction_revision_insert() RETURNS trigger AS $$" in MIGRATION
