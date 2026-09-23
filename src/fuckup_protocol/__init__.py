@@ -2,7 +2,7 @@
 
 from .fingerprint import fingerprint_incident
 from .jobs import InvalidJobTransition, JobState, JobStatus, claim, fail, recover_expired_lease, succeed
-from .ledger import InMemoryLedger, PromotionRejectedError, StaleQualificationError, subject_digest
+from .ledger import IdempotencyCollisionError, InMemoryLedger, PromotionRejectedError, StaleQualificationError, effect_digest, subject_digest
 from .models import CorrectionRevision, PolicyDecision, QualificationResult, TestResult
 from .plugins import DuplicateHandlerError, HandlerFamily, HandlerSpec, PluginRegistry, SideEffectClass, UnknownHandlerError
 from .policy import PromotionContext, PromotionPolicy, StrictPromotionPolicy
@@ -15,6 +15,7 @@ __all__ = [
     "DuplicateHandlerError",
     "HandlerFamily",
     "HandlerSpec",
+    "IdempotencyCollisionError",
     "InMemoryLedger",
     "InvalidJobTransition",
     "InvalidTransition",
