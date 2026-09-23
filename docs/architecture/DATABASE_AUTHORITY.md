@@ -113,3 +113,26 @@ The runtime identity must also not own the database or hold database-level
 `CREATE`. PostgreSQL explicitly treats database ownership as incompatible with
 a secure untrusted-schema model; the configurator therefore rejects that
 authority rather than trying to compensate for it.
+
+
+## Promotion and binding authorization continuity
+
+Promotion creation is a protected policy effect. The generic runtime role can
+create incidents, correction candidates, qualifications, work items, and
+scope-checked injection bindings, but it cannot INSERT a promotion by asserting
+its own `policy_decision`.
+
+A trusted policy/admin boundary must create the promotion. The promotion's
+`activation_scope` is a non-empty flat string map. Injection binding selectors
+use the same shape and must contain every authorized scope key/value; bindings
+may add keys to narrow applicability, but may not omit or change authorized
+scope dimensions.
+
+After creation, a binding is monotonic toward less effect:
+
+- `active` may move true -> false, never false -> true;
+- expiry may be introduced or moved earlier, never extended or removed;
+- promotion/adapter/selector/priority/conflict identity is immutable.
+
+Runtime revocation/deactivation remains available as a fail-safe. Widening a
+promotion or binding requires fresh trusted authorization.
