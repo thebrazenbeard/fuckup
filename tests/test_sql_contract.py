@@ -53,6 +53,8 @@ def test_worker_state_lock_fields_are_constrained():
 def test_idempotency_is_bound_to_effect_digest():
     assert "CHECK ((idempotency_key IS NULL) = (effect_digest IS NULL))" in MIGRATION
     assert "effect_digest text NOT NULL" in MIGRATION
+    assert "CREATE FUNCTION record_event_idempotent(" in MIGRATION
+    assert "idempotency key collision for a different event effect" in MIGRATION
 
 
 def test_promotion_history_is_immutable_except_monotonic_revocation():
