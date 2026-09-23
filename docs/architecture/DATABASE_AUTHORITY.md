@@ -17,9 +17,9 @@ created by that migration owner in the trusted schema.
 Use separate identities:
 
 - **migration owner** — owns the schema/tables/functions and applies migrations;
-- **runtime role** — non-owner application identity with least privilege;
-- optional future **publisher/admin roles** for outbox publication or protected
-  operational effects.
+- **runtime role** — non-owner application identity that can create/qualify candidates and use guarded runtime functions;
+- **authorizer role** — separate non-owner authority that can issue durable promotion authorizations and create bindings within the approved activation scope;
+- optional future **publisher/admin roles** for outbox publication or other protected operational effects.
 
 The runtime role must not own the F.U.C.K.U.P. schema or objects.
 
@@ -28,15 +28,16 @@ The runtime role must not own the F.U.C.K.U.P. schema or objects.
 The runtime role receives:
 
 - read access to the current data model;
-- carefully scoped INSERT privileges for ordinary domain facts;
-- `revoked_at`-only promotion updates;
-- bounded binding deactivation/expiry updates;
-- EXECUTE on guarded event and worker functions.
+- carefully scoped INSERT privileges for ordinary candidate facts;
+- EXECUTE on guarded event and worker functions;
+- EXECUTE on a monotonic binding-restriction function that can only deactivate a binding or move its expiry earlier.
 
 It does **not** receive direct authority to:
 
-- update `corrections.current_revision`;
-- update `corrections.status`;
+- update `corrections.current_revision` or `corrections.status`;
+- create, mutate, or revoke promotions directly;
+- create or reactivate injection bindings directly;
+- extend or remove binding expiry;
 - directly insert/update/delete the protected event ledger;
 - write the transactional outbox;
 - rewrite correction revisions or qualifications;
@@ -113,3 +114,39 @@ The runtime identity must also not own the database or hold database-level
 `CREATE`. PostgreSQL explicitly treats database ownership as incompatible with
 a secure untrusted-schema model; the configurator therefore rejects that
 authority rather than trying to compensate for it.
+
+
+## Authorization continuity
+
+Promotion is intentionally separated from generic runtime authority.
+
+`migrations/0003_authorization_continuity.sql` adds:
+
+- an append-only `promotion_authorizations` artifact;
+- mutually exclusive `RUNTIME` and `AUTHORIZER` role assignments;
+- `authorize_and_promote(...)`, executable only by the configured authorizer role;
+- `create_authorized_binding(...)`, also authorizer-only;
+- `restrict_injection_binding(...)`, available to runtime but monotonic only;
+- `revoke_authorized_promotion(...)`, authorizer-only.
+
+The database binds the promotion exactly to the authorization artifact:
+correction id/revision/digest, qualification, policy name/version/decision,
+activation scope, rollback condition, and approving actor must match.
+
+The activation scope is a flat non-empty string selector. A binding selector
+must contain every key/value in the authorization scope; it may add more
+constraints, but it may not omit or change authorized constraints. In other
+words, a binding may be equal to or narrower than the authorization scope, never
+broader.
+
+The generic runtime cannot fabricate `{"allow": true}` and insert a promotion:
+it has neither table DML authority nor EXECUTE on the authorizer function.
+
+Runtime binding restriction is monotonic:
+
+- active may become false, never false -> true;
+- an expiry may be added;
+- an existing expiry may only move earlier;
+- expiry cannot be removed or extended.
+
+Any broader activation requires a fresh authorization artifact.
