@@ -320,3 +320,48 @@ def test_revocation_before_activation_rejected(db):
             "UPDATE promotions SET revoked_at = activated_at - interval '1 second' WHERE id = %s",
             (promotion,),
         )
+
+
+def test_same_digest_reused_for_changed_event_effect_still_collides(db):
+    conn, _ = db
+    incident_a, incident_b, event1, event2, *_ = _ids()
+    _incident(conn, incident_a)
+    _incident(conn, incident_b)
+    conn.execute(
+        "SELECT id FROM record_event_idempotent(%s,%s,'org.fuckup.failure.flagged',NULL,'{\"value\":1}'::jsonb,NULL,'sha256:reused',NULL,'{}'::jsonb,'key-reused')",
+        (event1, incident_a),
+    ).fetchone()
+    with pytest.raises(psycopg.Error):
+        conn.execute(
+            "SELECT id FROM record_event_idempotent(%s,%s,'org.fuckup.failure.flagged',NULL,'{\"value\":2}'::jsonb,NULL,'sha256:reused',NULL,'{}'::jsonb,'key-reused')",
+            (event2, incident_b),
+        ).fetchone()
+
+
+def test_new_revision_resets_active_family_to_correction_proposed(db):
+    conn, _ = db
+    incident, correction, qualification, promotion, *_ = _ids()
+    _incident(conn, incident)
+    _correction(conn, incident, correction, digest="sha256:r1")
+    _qualification(conn, qualification, correction, 1, "sha256:r1")
+    _promotion(conn, promotion, correction, 1, "sha256:r1", qualification)
+    assert conn.execute("SELECT status FROM corrections WHERE id = %s", (correction,)).fetchone()[0] == "ACTIVE"
+
+    _correction(conn, incident, correction, digest="sha256:r2", revision=2)
+    row = conn.execute(
+        "SELECT current_revision, status FROM corrections WHERE id = %s",
+        (correction,),
+    ).fetchone()
+    assert row == (2, "CORRECTION_PROPOSED")
+
+
+def test_terminal_family_cannot_accept_new_revision(db):
+    conn, _ = db
+    incident, old_c, new_c, *_ = _ids()
+    _incident(conn, incident)
+    _correction(conn, incident, old_c, digest="sha256:old")
+    _correction(conn, incident, new_c, digest="sha256:new", supersedes=(old_c, 1))
+    assert conn.execute("SELECT status FROM corrections WHERE id = %s", (old_c,)).fetchone()[0] == "SUPERSEDED"
+
+    with pytest.raises(psycopg.Error):
+        _correction(conn, incident, old_c, digest="sha256:old-r2", revision=2)
