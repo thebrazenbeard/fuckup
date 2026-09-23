@@ -117,16 +117,16 @@ authority rather than trying to compensate for it.
 
 ## Promotion and binding authorization continuity
 
-Promotion creation is a protected policy effect. The generic runtime role can
-create incidents, correction candidates, qualifications, work items, and
-scope-checked injection bindings, but it cannot INSERT a promotion by asserting
-its own `policy_decision`.
+Promotion and binding creation are protected authorization effects. The generic
+runtime role can create incidents, correction candidates, qualifications, and
+work items, but it cannot INSERT a promotion or injection binding by asserting
+its own policy/scope/adapter/priority choices.
 
-A trusted policy/admin boundary must create the promotion. The promotion's
-`activation_scope` is a non-empty flat string map. Injection binding selectors
-use the same shape and must contain every authorized scope key/value; bindings
-may add keys to narrow applicability, but may not omit or change authorized
-scope dimensions.
+A trusted policy/admin boundary must create the promotion and its binding. The
+promotion's `activation_scope` is a non-empty flat string map. Injection
+binding selectors use the same shape and must contain every authorized scope
+key/value; bindings may add keys to narrow applicability, but may not omit or
+change authorized scope dimensions.
 
 After creation, a binding is monotonic toward less effect:
 
