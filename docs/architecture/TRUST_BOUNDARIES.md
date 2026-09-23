@@ -31,10 +31,11 @@ Use:
 at the authorization boundary. It recomputes the canonical validation report and
 policy decision from the supplied correction and qualification.
 
-The lower-level ledger `promote(...)` method is an internal apply primitive. It
-still rechecks current revision and canonical qualification, but its
-`PolicyDecision` argument is assumed to have come from a trusted policy
-evaluation boundary.
+The lower-level ledger `promote(...)` method is an internal apply primitive.
+It requires the exact `PromotionAuthorization` artifact returned by
+`authorize_promotion(...)`; it no longer accepts a free-floating
+`PolicyDecision`. The authorization artifact binds validation, policy result,
+activation scope, and rollback contract together.
 
 ## Database boundary
 
@@ -47,9 +48,14 @@ PostgreSQL independently enforces durable minimum invariants:
 - non-terminal lifecycle state;
 - non-empty activation and rollback contracts.
 
-The database cannot prove that an arbitrary JSON policy assertion was generated
-by the intended policy engine. Applications crossing an untrusted boundary must
-re-evaluate policy before inserting a promotion.
+The database does not treat a generic runtime assertion as policy authority.
+The generic runtime role cannot INSERT promotions. Promotion creation is
+reserved for a separate trusted policy/admin authority until a durable
+authorization artifact or attestation scheme is source-controlled.
 
-Future cryptographic policy attestations may strengthen that boundary, but are
-not required for the core protocol.
+Once a promotion exists, PostgreSQL carries its authority forward: binding
+selectors must be equal to or narrower than the promotion activation scope, and
+binding updates may only reduce effect through deactivation or earlier expiry.
+
+Future cryptographic policy attestations may allow independently verifiable
+promotion creation without granting the generic runtime policy authority.
