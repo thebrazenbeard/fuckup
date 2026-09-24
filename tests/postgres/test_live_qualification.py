@@ -213,7 +213,7 @@ def test_10_expired_lease_can_be_reclaimed(db):
     conn, _ = db
     job, *_ = _ids()
     conn.execute("INSERT INTO worker_jobs(id,job_type,payload,max_attempts) VALUES (%s,'q','{}'::jsonb,2)", (job,))
-    assert conn.execute("SELECT id FROM claim_worker_job('a',30)").fetchone()[0] == job
+    assert str(conn.execute("SELECT id FROM claim_worker_job('a',30)").fetchone()[0]) == job
     conn.execute("UPDATE worker_jobs SET lease_expires_at = now() - interval '1 second' WHERE id = %s", (job,))
     assert str(conn.execute("SELECT id FROM claim_worker_job('b',30)").fetchone()[0]) == job
     assert conn.execute("SELECT attempts FROM worker_jobs WHERE id = %s", (job,)).fetchone()[0] == 2
@@ -425,7 +425,7 @@ def test_runtime_role_cannot_rewrite_authoritative_projection_or_bypass_event_gu
             """,
             (event, incident),
         ).fetchone()[0]
-        assert guarded == event
+        assert str(guarded) == event
     finally:
         conn.execute("RESET ROLE")
         conn.execute(sql.SQL("DROP OWNED BY {}").format(sql.Identifier(role)))
@@ -520,19 +520,19 @@ def test_configured_runtime_role_can_use_guarded_worker_lifecycle(db):
             "INSERT INTO worker_jobs(id,job_type,payload,max_attempts) VALUES (%s,'q','{}'::jsonb,2)",
             (job_complete,),
         )
-        assert conn.execute("SELECT id FROM claim_worker_job('worker-a',30)").fetchone()[0] == job_complete
-        assert conn.execute("SELECT id FROM complete_worker_job(%s,'worker-a')", (job_complete,)).fetchone()[0] == job_complete
+        assert str(conn.execute("SELECT id FROM claim_worker_job('worker-a',30)").fetchone()[0]) == job_complete
+        assert str(conn.execute("SELECT id FROM complete_worker_job(%s,'worker-a')", (job_complete,)).fetchone()[0]) == job_complete
 
         conn.execute(
             "INSERT INTO worker_jobs(id,job_type,payload,max_attempts) VALUES (%s,'q','{}'::jsonb,1)",
             (job_fail,),
         )
-        assert conn.execute("SELECT id FROM claim_worker_job('worker-b',30)").fetchone()[0] == job_fail
+        assert str(conn.execute("SELECT id FROM claim_worker_job('worker-b',30)").fetchone()[0]) == job_fail
         failed = conn.execute(
             "SELECT id,status FROM fail_worker_job(%s,'worker-b','{}'::jsonb,false,0)",
             (job_fail,),
         ).fetchone()
-        assert failed == (job_fail, "DEAD_LETTERED")
+        assert (str(failed[0]), failed[1]) == (job_fail, "DEAD_LETTERED")
     finally:
         conn.execute("RESET ROLE")
         conn.execute(sql.SQL("DROP OWNED BY {}").format(sql.Identifier(runtime)))
@@ -766,7 +766,7 @@ def test_runtime_cannot_fabricate_promotion_or_binding_authority(db):
             """,
             (authorization, promotion, correction, qualification),
         ).fetchone()[0]
-        assert created == promotion
+        assert str(created) == promotion
 
         with pytest.raises(psycopg.Error, match="equal to or narrower"):
             conn.execute(
@@ -789,7 +789,7 @@ def test_runtime_cannot_fabricate_promotion_or_binding_authority(db):
             """,
             (binding, promotion),
         ).fetchone()[0]
-        assert created_binding == binding
+        assert str(created_binding) == binding
 
         conn.execute("RESET ROLE")
         conn.execute(sql.SQL("SET ROLE {}").format(sql.Identifier(runtime)))
