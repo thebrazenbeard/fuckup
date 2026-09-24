@@ -93,14 +93,14 @@ DECLARE
     current_revision integer;
     current_digest text;
     correction_status text;
-    authorization promotion_authorizations%ROWTYPE;
+    auth_record promotion_authorizations%ROWTYPE;
 BEGIN
     IF NEW.authorization_id IS NULL THEN
         RAISE EXCEPTION 'promotion authorization artifact is required';
     END IF;
 
     SELECT *
-      INTO authorization
+      INTO auth_record
       FROM promotion_authorizations
      WHERE id = NEW.authorization_id;
 
@@ -108,17 +108,17 @@ BEGIN
         RAISE EXCEPTION 'unknown promotion authorization %', NEW.authorization_id;
     END IF;
 
-    IF NEW.correction_id IS DISTINCT FROM authorization.correction_id
-       OR NEW.correction_revision IS DISTINCT FROM authorization.correction_revision
-       OR NEW.exact_subject_digest IS DISTINCT FROM authorization.exact_subject_digest
-       OR NEW.qualification_id IS DISTINCT FROM authorization.qualification_id
-       OR NEW.qualification_result IS DISTINCT FROM authorization.qualification_result
-       OR NEW.policy_name IS DISTINCT FROM authorization.policy_name
-       OR NEW.policy_version IS DISTINCT FROM authorization.policy_version
-       OR NEW.policy_decision IS DISTINCT FROM authorization.policy_decision
-       OR NEW.activation_scope IS DISTINCT FROM authorization.activation_scope
-       OR NEW.rollback_condition IS DISTINCT FROM authorization.rollback_condition
-       OR NEW.approved_by IS DISTINCT FROM authorization.authorized_by THEN
+    IF NEW.correction_id IS DISTINCT FROM auth_record.correction_id
+       OR NEW.correction_revision IS DISTINCT FROM auth_record.correction_revision
+       OR NEW.exact_subject_digest IS DISTINCT FROM auth_record.exact_subject_digest
+       OR NEW.qualification_id IS DISTINCT FROM auth_record.qualification_id
+       OR NEW.qualification_result IS DISTINCT FROM auth_record.qualification_result
+       OR NEW.policy_name IS DISTINCT FROM auth_record.policy_name
+       OR NEW.policy_version IS DISTINCT FROM auth_record.policy_version
+       OR NEW.policy_decision IS DISTINCT FROM auth_record.policy_decision
+       OR NEW.activation_scope IS DISTINCT FROM auth_record.activation_scope
+       OR NEW.rollback_condition IS DISTINCT FROM auth_record.rollback_condition
+       OR NEW.approved_by IS DISTINCT FROM auth_record.authorized_by THEN
         RAISE EXCEPTION 'promotion does not exactly match its authorization artifact';
     END IF;
 
@@ -337,7 +337,7 @@ BEGIN
         RAISE EXCEPTION 'conflict policy is required';
     END IF;
 
-    SELECT authorization.activation_scope,
+    SELECT auth_record.activation_scope,
            promotion.correction_revision,
            correction.current_revision,
            correction.status,
@@ -348,8 +348,8 @@ BEGIN
            correction_status,
            promotion_revoked_at
       FROM promotions promotion
-      JOIN promotion_authorizations authorization
-        ON authorization.id = promotion.authorization_id
+      JOIN promotion_authorizations auth_record
+        ON auth_record.id = promotion.authorization_id
       JOIN corrections correction
         ON correction.id = promotion.correction_id
      WHERE promotion.id = p_promotion_id
