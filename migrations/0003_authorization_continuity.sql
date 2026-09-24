@@ -471,20 +471,20 @@ CREATE FUNCTION configure_fuckup_runtime_role(p_role name)
 RETURNS void AS $runtime_config$
 DECLARE
     s name := current_schema();
-    role_oid oid;
+    v_role_oid oid;
     assigned_kind text;
 BEGIN
-    SELECT oid INTO role_oid
+    SELECT oid INTO v_role_oid
       FROM pg_catalog.pg_roles
      WHERE rolname = p_role;
 
-    IF role_oid IS NULL THEN
+    IF v_role_oid IS NULL THEN
         RAISE EXCEPTION 'runtime role % does not exist', p_role;
     END IF;
 
     SELECT authority_kind INTO assigned_kind
       FROM authority_role_assignments
-     WHERE authority_role_assignments.role_oid = role_oid;
+     WHERE authority_role_assignments.role_oid = v_role_oid;
 
     IF assigned_kind IS NOT NULL AND assigned_kind <> 'RUNTIME' THEN
         RAISE EXCEPTION 'role % is already assigned as % authority', p_role, assigned_kind;
@@ -538,7 +538,7 @@ BEGIN
     END IF;
 
     INSERT INTO authority_role_assignments(role_oid, role_name, authority_kind)
-    VALUES (role_oid, p_role, 'RUNTIME')
+    VALUES (v_role_oid, p_role, 'RUNTIME')
     ON CONFLICT (role_oid) DO UPDATE
        SET role_name = EXCLUDED.role_name,
            authority_kind = EXCLUDED.authority_kind,
@@ -550,7 +550,7 @@ CREATE FUNCTION configure_fuckup_authorizer_role(p_role name)
 RETURNS void AS $authorizer_config$
 DECLARE
     s name := current_schema();
-    role_oid oid;
+    v_role_oid oid;
     role_superuser boolean;
     role_createrole boolean;
     role_createdb boolean;
@@ -559,12 +559,12 @@ DECLARE
     assigned_kind text;
 BEGIN
     SELECT oid, rolsuper, rolcreaterole, rolcreatedb, rolreplication, rolbypassrls
-      INTO role_oid, role_superuser, role_createrole, role_createdb,
+      INTO v_role_oid, role_superuser, role_createrole, role_createdb,
            role_replication, role_bypassrls
       FROM pg_catalog.pg_roles
      WHERE rolname = p_role;
 
-    IF role_oid IS NULL THEN
+    IF v_role_oid IS NULL THEN
         RAISE EXCEPTION 'authorizer role % does not exist', p_role;
     END IF;
 
@@ -576,7 +576,7 @@ BEGIN
         SELECT 1
           FROM pg_catalog.pg_database
          WHERE datname = current_database()
-           AND datdba = role_oid
+           AND datdba = v_role_oid
     ) OR pg_catalog.has_database_privilege(p_role, current_database(), 'CREATE') THEN
         RAISE EXCEPTION 'authorizer role % has forbidden database authority', p_role;
     END IF;
@@ -584,14 +584,14 @@ BEGIN
     IF EXISTS (
         SELECT 1
           FROM pg_catalog.pg_auth_members
-         WHERE member = role_oid
+         WHERE member = v_role_oid
     ) THEN
         RAISE EXCEPTION 'authorizer role % must not be a member of another role', p_role;
     END IF;
 
     SELECT authority_kind INTO assigned_kind
       FROM authority_role_assignments
-     WHERE authority_role_assignments.role_oid = role_oid;
+     WHERE authority_role_assignments.role_oid = v_role_oid;
 
     IF assigned_kind IS NOT NULL AND assigned_kind <> 'AUTHORIZER' THEN
         RAISE EXCEPTION 'role % is already assigned as % authority', p_role, assigned_kind;
@@ -653,7 +653,7 @@ BEGIN
     END IF;
 
     INSERT INTO authority_role_assignments(role_oid, role_name, authority_kind)
-    VALUES (role_oid, p_role, 'AUTHORIZER')
+    VALUES (v_role_oid, p_role, 'AUTHORIZER')
     ON CONFLICT (role_oid) DO UPDATE
        SET role_name = EXCLUDED.role_name,
            authority_kind = EXCLUDED.authority_kind,
