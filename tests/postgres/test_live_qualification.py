@@ -215,7 +215,7 @@ def test_10_expired_lease_can_be_reclaimed(db):
     conn.execute("INSERT INTO worker_jobs(id,job_type,payload,max_attempts) VALUES (%s,'q','{}'::jsonb,2)", (job,))
     assert conn.execute("SELECT id FROM claim_worker_job('a',30)").fetchone()[0] == job
     conn.execute("UPDATE worker_jobs SET lease_expires_at = now() - interval '1 second' WHERE id = %s", (job,))
-    assert conn.execute("SELECT id FROM claim_worker_job('b',30)").fetchone()[0] == job
+    assert str(conn.execute("SELECT id FROM claim_worker_job('b',30)").fetchone()[0]) == job
     assert conn.execute("SELECT attempts FROM worker_jobs WHERE id = %s", (job,)).fetchone()[0] == 2
 
 
@@ -249,7 +249,7 @@ def test_13_same_idempotency_key_same_effect_returns_existing(db):
         "SELECT id FROM record_event_idempotent(%s,%s,%s,NULL,'{}'::jsonb,NULL,%s,NULL,'{}'::jsonb,%s)",
         (event2, *args),
     ).fetchone()[0]
-    assert first == second == event1
+    assert str(first) == str(second) == event1
 
 
 def test_14_same_idempotency_key_different_effect_fails(db):
