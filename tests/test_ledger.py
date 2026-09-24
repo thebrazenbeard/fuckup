@@ -2,9 +2,10 @@ import itertools
 
 import pytest
 
+from fuckup_protocol.authorization import PromotionAuthorization
 from fuckup_protocol.ledger import IdempotencyCollisionError, InMemoryLedger, PromotionRejectedError, StaleQualificationError
 from fuckup_protocol.models import PolicyDecision, QualificationResult, TestResult
-from fuckup_protocol.validation import TestKind
+from fuckup_protocol.validation import TestKind, ValidationReport
 
 
 def _ids():
@@ -23,6 +24,15 @@ def _passing_qualification(correction):
         exact_subject_digest=correction.subject_digest,
         suite_version="suite-v1",
         tests=tests,
+    )
+
+
+def _authorization(correction, qualification, *, allow=True):
+    return PromotionAuthorization(
+        validation=ValidationReport.evaluate(correction, qualification),
+        decision=PolicyDecision(allow=allow),
+        activation_scope={"agent": "demo"},
+        rollback_condition={"action": "revoke_on_regression"},
     )
 
 
@@ -90,9 +100,7 @@ def test_old_qualification_becomes_stale_after_revision_change():
             correction_id=correction.correction_id,
             correction_revision=1,
             qualification_id="q-1",
-            activation_scope="agent:demo",
-            rollback_condition="revoke on regression",
-            policy_decision=PolicyDecision(allow=True),
+            authorization=_authorization(correction, qualification),
         )
 
 
@@ -107,9 +115,7 @@ def test_policy_rejection_blocks_promotion():
             correction_id=correction.correction_id,
             correction_revision=1,
             qualification_id="q-1",
-            activation_scope="agent:demo",
-            rollback_condition="revoke on regression",
-            policy_decision=PolicyDecision(allow=False, reasons=("blocked",)),
+            authorization=_authorization(correction, _passing_qualification(correction), allow=False),
         )
 
 
@@ -122,9 +128,7 @@ def test_revocation_preserves_promotion_identity_and_history_reference():
         correction_id=correction.correction_id,
         correction_revision=1,
         qualification_id="q-1",
-        activation_scope="agent:demo",
-        rollback_condition="revoke on regression",
-        policy_decision=PolicyDecision(allow=True),
+        authorization=_authorization(correction, _passing_qualification(correction)),
     )
     revoked = ledger.revoke(promotion.id)
 
@@ -159,7 +163,5 @@ def test_failed_qualification_cannot_promote_even_with_allow_policy():
             correction_id=correction.correction_id,
             correction_revision=correction.revision,
             qualification_id="q-fail",
-            activation_scope="agent:demo",
-            rollback_condition="revoke on regression",
-            policy_decision=PolicyDecision(allow=True),
+            authorization=_authorization(correction, qualification),
         )
