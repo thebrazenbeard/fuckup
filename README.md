@@ -68,6 +68,10 @@ adapter.register(registry)
 
 The filesystem adapter is for qualification/examples. Production adapters must supply their own readback and authority integration.
 
+## Licensing
+
+Original repository material is source-visible proprietary material under `LICENSE`. Noncommercial evaluation/research permissions are limited; commercial use requires a separate written license under `COMMERCIAL_LICENSE.md`. Contributions are governed by `CONTRIBUTING.md` and `CLA.md`. Third-party dependencies retain their own licenses; see `THIRD_PARTY_NOTICES.md`.
+
 ## Repository map
 
 - `PROTOCOL.md` — canonical six-stage protocol text.
