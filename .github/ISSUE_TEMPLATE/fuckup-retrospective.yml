@@ -1,0 +1,73 @@
+name: F.U.C.K.U.P. retrospective
+description: Record a failure, root-cause investigation, correction candidate, and prevention/containment plan.
+title: "[F.U.C.K.U.P.] "
+labels:
+  - retrospective
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this form to record the failure without erasing uncertainty. A proposed correction is not considered active merely because this issue exists.
+
+  - type: input
+    id: system
+    attributes:
+      label: System / model / component
+    validations:
+      required: true
+
+  - type: textarea
+    id: flag
+    attributes:
+      label: F — Flag
+      description: What was expected, what actually happened, and what was violated?
+    validations:
+      required: true
+
+  - type: textarea
+    id: understand
+    attributes:
+      label: U — Understand
+      description: Reconstruct the sequence, dependencies, evidence gaps, and competing explanations.
+    validations:
+      required: true
+
+  - type: textarea
+    id: calibrate
+    attributes:
+      label: C — Calibrate
+      description: Immediate assumption/parameter correction, ambiguity, containment, or escalation.
+    validations:
+      required: true
+
+  - type: textarea
+    id: know
+    attributes:
+      label: K — Know
+      description: Root-cause proposition, support, counterevidence, alternatives, and falsifier.
+    validations:
+      required: true
+
+  - type: textarea
+    id: unlearn
+    attributes:
+      label: U — Unlearn
+      description: Define the superseding correction candidate. Do not erase the prior state.
+    validations:
+      required: true
+
+  - type: textarea
+    id: prevent
+    attributes:
+      label: P — Prevent
+      description: Guardrail/test/policy/injection/containment, qualification evidence, scope, and rollback condition.
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: truth
+    attributes:
+      label: Promotion discipline
+      options:
+        - label: I have not represented a proposed correction as qualified or active without exact evidence.
+          required: true

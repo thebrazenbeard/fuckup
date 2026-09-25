@@ -1,0 +1,167 @@
+"""Executable core for the F.U.C.K.U.P. corrective-learning protocol."""
+
+from .ambiguity import (
+    AmbiguityAssessment,
+    AmbiguityRoute,
+    CausalHypothesis,
+    assess_ambiguity,
+    route_ambiguity,
+)
+from .authorization import PromotionAuthorization, authorize_promotion
+from .bindings import BindingConflictError, InjectionBinding, resolve_binding, selector_digest, selector_within_scope
+from .effectiveness import (
+    EffectivenessState,
+    EffectivenessSubject,
+    EffectivenessSummary,
+    ObservationPhase,
+    OutcomeObservation,
+    summarize_effectiveness,
+)
+from .events import FuckupEvent, lifecycle_event_type
+from .execution import (
+    ExecutionCoordinator,
+    ExecutionResult,
+    InjectorReadback,
+    NoActiveBindingError,
+    NonExecutableBindingError,
+    ProtectedEffectDeniedError,
+    ReadbackDisposition,
+    StaleBindingError,
+)
+from .experiment import (
+    ExperimentCondition,
+    ExperimentOutcome,
+    FeedbackCondition,
+    LabelCondition,
+    ProtocolNameCondition,
+    SerializationCondition,
+    factorial_conditions,
+)
+from .fingerprint import fingerprint_incident
+from .jobs import (
+    InvalidJobTransition,
+    JobState,
+    JobStatus,
+    claim,
+    fail,
+    recover_expired_lease,
+    succeed,
+)
+from .ledger import (
+    IdempotencyCollisionError,
+    IncidentOccurrenceRecord,
+    InMemoryLedger,
+    PromotionRejectedError,
+    StaleQualificationError,
+    effect_digest,
+    subject_digest,
+)
+from .models import CorrectionRevision, PolicyDecision, QualificationResult, TestResult
+from .operations import (
+    InvalidOperationTransition,
+    OperationEvent,
+    OperationIntent,
+    OperationJournal,
+    OperationState,
+    operation_effect_digest,
+)
+from .plugins import (
+    DuplicateHandlerError,
+    HandlerFamily,
+    HandlerSpec,
+    PluginRegistry,
+    MissingInjectorReadbackError,
+    SideEffectClass,
+    UnknownHandlerError,
+)
+from .policy import PromotionContext, PromotionPolicy, StrictPromotionPolicy
+from .postgres_execution import DurableOperationStatus, DurableOutcomeRecord, PostgresExecutionStore
+from .reference_adapter import ReferenceFileInjector
+from .provenance import ProvenanceKind, ProvenanceRef
+from .state import CorrectionState, InvalidTransition, can_transition, require_transition
+from .validation import TestKind, ValidationReport
+
+__all__ = [
+    "AmbiguityAssessment",
+    "AmbiguityRoute",
+    "BindingConflictError",
+    "CausalHypothesis",
+    "CorrectionRevision",
+    "CorrectionState",
+    "DuplicateHandlerError",
+    "DurableOperationStatus",
+    "DurableOutcomeRecord",
+    "EffectivenessState",
+    "EffectivenessSubject",
+    "EffectivenessSummary",
+    "ExecutionCoordinator",
+    "ExecutionResult",
+    "ExperimentCondition",
+    "ExperimentOutcome",
+    "FeedbackCondition",
+    "FuckupEvent",
+    "HandlerFamily",
+    "HandlerSpec",
+    "IdempotencyCollisionError",
+    "IncidentOccurrenceRecord",
+    "InMemoryLedger",
+    "InjectionBinding",
+    "InjectorReadback",
+    "InvalidJobTransition",
+    "InvalidOperationTransition",
+    "InvalidTransition",
+    "JobState",
+    "JobStatus",
+    "LabelCondition",
+    "MissingInjectorReadbackError",
+    "NoActiveBindingError",
+    "NonExecutableBindingError",
+    "ObservationPhase",
+    "OperationEvent",
+    "OperationIntent",
+    "OperationJournal",
+    "OperationState",
+    "OutcomeObservation",
+    "PluginRegistry",
+    "PostgresExecutionStore",
+    "PolicyDecision",
+    "PromotionAuthorization",
+    "PromotionContext",
+    "PromotionPolicy",
+    "PromotionRejectedError",
+    "ProtectedEffectDeniedError",
+    "ProtocolNameCondition",
+    "ProvenanceKind",
+    "ProvenanceRef",
+    "QualificationResult",
+    "ReadbackDisposition",
+    "ReferenceFileInjector",
+    "SerializationCondition",
+    "SideEffectClass",
+    "StaleBindingError",
+    "StaleQualificationError",
+    "StrictPromotionPolicy",
+    "TestKind",
+    "TestResult",
+    "UnknownHandlerError",
+    "ValidationReport",
+    "assess_ambiguity",
+    "authorize_promotion",
+    "can_transition",
+    "claim",
+    "effect_digest",
+    "factorial_conditions",
+    "fail",
+    "fingerprint_incident",
+    "lifecycle_event_type",
+    "operation_effect_digest",
+    "recover_expired_lease",
+    "require_transition",
+    "resolve_binding",
+    "selector_digest",
+    "selector_within_scope",
+    "route_ambiguity",
+    "subject_digest",
+    "succeed",
+    "summarize_effectiveness",
+]
