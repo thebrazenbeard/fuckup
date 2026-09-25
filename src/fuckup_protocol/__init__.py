@@ -11,6 +11,7 @@ from .authorization import PromotionAuthorization, authorize_promotion
 from .bindings import BindingConflictError, InjectionBinding, resolve_binding, selector_within_scope
 from .effectiveness import (
     EffectivenessState,
+    EffectivenessSubject,
     EffectivenessSummary,
     ObservationPhase,
     OutcomeObservation,
@@ -38,6 +39,7 @@ from .jobs import (
 )
 from .ledger import (
     IdempotencyCollisionError,
+    IncidentOccurrenceRecord,
     InMemoryLedger,
     PromotionRejectedError,
     StaleQualificationError,
@@ -45,6 +47,14 @@ from .ledger import (
     subject_digest,
 )
 from .models import CorrectionRevision, PolicyDecision, QualificationResult, TestResult
+from .operations import (
+    InvalidOperationTransition,
+    OperationEvent,
+    OperationIntent,
+    OperationJournal,
+    OperationState,
+    operation_effect_digest,
+)
 from .plugins import (
     DuplicateHandlerError,
     HandlerFamily,
@@ -67,6 +77,7 @@ __all__ = [
     "CorrectionState",
     "DuplicateHandlerError",
     "EffectivenessState",
+    "EffectivenessSubject",
     "EffectivenessSummary",
     "ExperimentCondition",
     "ExperimentOutcome",
@@ -75,14 +86,20 @@ __all__ = [
     "HandlerFamily",
     "HandlerSpec",
     "IdempotencyCollisionError",
+    "IncidentOccurrenceRecord",
     "InMemoryLedger",
     "InjectionBinding",
     "InvalidJobTransition",
+    "InvalidOperationTransition",
     "InvalidTransition",
     "JobState",
     "JobStatus",
     "LabelCondition",
     "ObservationPhase",
+    "OperationEvent",
+    "OperationIntent",
+    "OperationJournal",
+    "OperationState",
     "OutcomeObservation",
     "PluginRegistry",
     "PolicyDecision",
@@ -111,6 +128,7 @@ __all__ = [
     "fail",
     "fingerprint_incident",
     "lifecycle_event_type",
+    "operation_effect_digest",
     "recover_expired_lease",
     "require_transition",
     "resolve_binding",

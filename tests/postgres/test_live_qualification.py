@@ -16,6 +16,7 @@ MIGRATIONS = (
     Path("migrations/0001_core.sql").read_text(),
     Path("migrations/0002_runtime_authority.sql").read_text(),
     Path("migrations/0003_authorization_continuity.sql").read_text(),
+    Path("migrations/0004_execution_integrity.sql").read_text(),
 )
 
 
@@ -869,4 +870,206 @@ def test_same_role_cannot_be_runtime_and_authorizer(db):
             conn.execute("SELECT configure_fuckup_authorizer_role(%s::name)", (role,))
     finally:
         conn.execute(sql.SQL("DROP OWNED BY {}").format(sql.Identifier(role)))
+        conn.execute(sql.SQL("DROP ROLE IF EXISTS {}").format(sql.Identifier(role)))
+
+
+def test_execution_integrity_journal_requires_reconciliation_before_redispatch(db):
+    conn, _schema = db
+    operation = str(uuid4())
+    duplicate_id = str(uuid4())
+    key = f"effect:{uuid4()}"
+
+    created = conn.execute(
+        """
+        SELECT id FROM prepare_effect_operation(
+            %s,%s,'provider:demo','publish',
+            '{"artifact":"a"}'::jsonb,'sha256:a',now()
+        )
+        """,
+        (operation, key),
+    ).fetchone()[0]
+    assert str(created) == operation
+
+    duplicate = conn.execute(
+        """
+        SELECT id FROM prepare_effect_operation(
+            %s,%s,'provider:demo','publish',
+            '{"artifact":"a"}'::jsonb,'sha256:a',now()
+        )
+        """,
+        (duplicate_id, key),
+    ).fetchone()[0]
+    assert str(duplicate) == operation
+
+    with pytest.raises(psycopg.Error, match="idempotency key collision"):
+        conn.execute(
+            """
+            SELECT * FROM prepare_effect_operation(
+                %s,%s,'provider:demo','publish',
+                '{"artifact":"different"}'::jsonb,'sha256:different',now()
+            )
+            """,
+            (str(uuid4()), key),
+        ).fetchall()
+
+    attempted = conn.execute(
+        "SELECT state FROM record_effect_attempt(%s,'attempt:1',now())",
+        (operation,),
+    ).fetchone()[0]
+    assert attempted == "ATTEMPTED"
+
+    with pytest.raises(psycopg.Error, match="cannot attempt operation from state"):
+        conn.execute(
+            "SELECT * FROM record_effect_attempt(%s,'attempt:2',now())",
+            (operation,),
+        ).fetchall()
+
+    ambiguous = conn.execute(
+        """
+        SELECT state FROM reconcile_effect_operation(
+            %s,'AMBIGUOUS','timeout:1',NULL,now()
+        )
+        """,
+        (operation,),
+    ).fetchone()[0]
+    assert ambiguous == "AMBIGUOUS"
+
+    with pytest.raises(psycopg.Error, match="cannot attempt operation from state"):
+        conn.execute(
+            "SELECT * FROM record_effect_attempt(%s,'attempt:3',now())",
+            (operation,),
+        ).fetchall()
+
+    verified = conn.execute(
+        """
+        SELECT state FROM reconcile_effect_operation(
+            %s,'VERIFIED','readback:1','sha256:observed',now()
+        )
+        """,
+        (operation,),
+    ).fetchone()[0]
+    assert verified == "VERIFIED"
+
+    with pytest.raises(psycopg.Error, match="cannot reconcile operation from state"):
+        conn.execute(
+            """
+            SELECT * FROM reconcile_effect_operation(
+                %s,'FAILED','late-readback',NULL,now()
+            )
+            """,
+            (operation,),
+        ).fetchall()
+
+
+def test_incident_occurrence_preserves_duplicate_evidence(db):
+    conn, _schema = db
+    incident = str(uuid4())
+    first_occurrence = str(uuid4())
+    second_occurrence = str(uuid4())
+    _incident(conn, incident)
+
+    conn.execute(
+        """
+        SELECT id FROM record_incident_occurrence(
+            %s,%s,'{"attempt":1}'::jsonb,'sha256:one',now(),'run:1'
+        )
+        """,
+        (first_occurrence, incident),
+    ).fetchone()
+    conn.execute(
+        """
+        SELECT id FROM record_incident_occurrence(
+            %s,%s,'{"attempt":2}'::jsonb,'sha256:two',now(),'run:2'
+        )
+        """,
+        (second_occurrence, incident),
+    ).fetchone()
+
+    rows = conn.execute(
+        """
+        SELECT ordinal, payload_digest, source_ref
+        FROM incident_occurrences
+        WHERE incident_id = %s
+        ORDER BY ordinal
+        """,
+        (incident,),
+    ).fetchall()
+    assert rows == [
+        (1, "sha256:one", "run:1"),
+        (2, "sha256:two", "run:2"),
+    ]
+    assert conn.execute(
+        "SELECT occurrence_count FROM incidents WHERE id = %s",
+        (incident,),
+    ).fetchone()[0] == 2
+
+
+def test_runtime_role_has_guarded_effect_journal_without_direct_dml(db):
+    conn, schema = db
+    privilege = conn.execute(
+        """
+        SELECT rolsuper OR rolcreaterole
+        FROM pg_catalog.pg_roles
+        WHERE rolname = current_user
+        """
+    ).fetchone()[0]
+    if not privilege:
+        pytest.skip("test database user needs SUPERUSER or CREATEROLE for runtime-role qualification")
+
+    role = f"fuckup_runtime_{uuid4().hex[:16]}"
+    current_user = conn.execute("SELECT current_user").fetchone()[0]
+    operation = str(uuid4())
+    key = f"effect:{uuid4()}"
+
+    try:
+        conn.execute(sql.SQL("CREATE ROLE {} NOLOGIN").format(sql.Identifier(role)))
+        conn.execute(
+            sql.SQL("GRANT {} TO {}").format(
+                sql.Identifier(role),
+                sql.Identifier(current_user),
+            )
+        )
+        conn.execute("SELECT configure_fuckup_runtime_role(%s::name)", (role,))
+        conn.execute(sql.SQL("SET ROLE {}").format(sql.Identifier(role)))
+
+        with pytest.raises(psycopg.errors.InsufficientPrivilege):
+            conn.execute(
+                """
+                INSERT INTO effect_operations(
+                    id,idempotency_key,target,operation_kind,
+                    effect_payload,effect_digest
+                )
+                VALUES (
+                    %s,%s,'provider:demo','publish',
+                    '{}'::jsonb,'sha256:direct'
+                )
+                """,
+                (str(uuid4()), f"direct:{uuid4()}"),
+            )
+
+        created = conn.execute(
+            """
+            SELECT id FROM prepare_effect_operation(
+                %s,%s,'provider:demo','publish',
+                '{"artifact":"a"}'::jsonb,'sha256:a',now()
+            )
+            """,
+            (operation, key),
+        ).fetchone()[0]
+        assert str(created) == operation
+
+        state = conn.execute(
+            "SELECT state FROM record_effect_attempt(%s,'attempt:runtime',now())",
+            (operation,),
+        ).fetchone()[0]
+        assert state == "ATTEMPTED"
+    finally:
+        conn.execute("RESET ROLE")
+        conn.execute(sql.SQL("DROP OWNED BY {}").format(sql.Identifier(role)))
+        conn.execute(
+            sql.SQL("REVOKE {} FROM {}").format(
+                sql.Identifier(role),
+                sql.Identifier(current_user),
+            )
+        )
         conn.execute(sql.SQL("DROP ROLE IF EXISTS {}").format(sql.Identifier(role)))

@@ -4,6 +4,7 @@ import hashlib
 import json
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
+from types import MappingProxyType
 from typing import Any, Callable, Mapping
 from uuid import uuid4
 
@@ -14,6 +15,16 @@ from .validation import ValidationReport
 
 def _utcnow() -> datetime:
     return datetime.now(timezone.utc)
+
+
+def _deep_freeze(value: Any) -> Any:
+    if isinstance(value, Mapping):
+        return MappingProxyType({str(key): _deep_freeze(item) for key, item in value.items()})
+    if isinstance(value, list | tuple):
+        return tuple(_deep_freeze(item) for item in value)
+    if isinstance(value, set | frozenset):
+        return frozenset(_deep_freeze(item) for item in value)
+    return value
 
 
 def subject_digest(payload: Mapping[str, Any]) -> str:
@@ -44,6 +55,24 @@ class IncidentRecord:
     first_seen_at: datetime
     last_seen_at: datetime
     occurrence_count: int = 1
+
+
+@dataclass(frozen=True, slots=True)
+class IncidentOccurrenceRecord:
+    id: str
+    incident_id: str
+    ordinal: int
+    payload: Mapping[str, Any]
+    payload_digest: str
+    observed_at: datetime
+    source_ref: str | None = None
+
+    def __post_init__(self) -> None:
+        if self.ordinal < 1:
+            raise ValueError("occurrence ordinal must be >= 1")
+        if not self.payload_digest:
+            raise ValueError("payload_digest is required")
+        object.__setattr__(self, "payload", _deep_freeze(self.payload))
 
 
 @dataclass(frozen=True, slots=True)
@@ -107,6 +136,7 @@ class InMemoryLedger:
         self._id_factory = id_factory or (lambda: str(uuid4()))
         self._incidents: dict[str, IncidentRecord] = {}
         self._incident_by_fingerprint: dict[tuple[str, str], str] = {}
+        self._occurrences: dict[str, list[IncidentOccurrenceRecord]] = {}
         self._events: list[EventRecord] = []
         self._event_by_idempotency: dict[str, EventRecord] = {}
         self._corrections: dict[str, CorrectionFamily] = {}
@@ -120,6 +150,7 @@ class InMemoryLedger:
         fingerprint_version: str,
         payload: Mapping[str, Any],
         observed_at: datetime | None = None,
+        source_ref: str | None = None,
     ) -> tuple[IncidentRecord, bool]:
         now = observed_at or _utcnow()
         key = (fingerprint_version, fingerprint)
@@ -128,6 +159,12 @@ class InMemoryLedger:
             incident = self._incidents[existing_id]
             incident.last_seen_at = now
             incident.occurrence_count += 1
+            self._record_occurrence(
+                incident=incident,
+                payload=payload,
+                observed_at=now,
+                source_ref=source_ref,
+            )
             return incident, True
 
         incident = IncidentRecord(
@@ -140,7 +177,40 @@ class InMemoryLedger:
         )
         self._incidents[incident.id] = incident
         self._incident_by_fingerprint[key] = incident.id
+        self._occurrences[incident.id] = []
+        self._record_occurrence(
+            incident=incident,
+            payload=payload,
+            observed_at=now,
+            source_ref=source_ref,
+        )
         return incident, False
+
+    def occurrences(self, incident_id: str) -> tuple[IncidentOccurrenceRecord, ...]:
+        if incident_id not in self._incidents:
+            raise KeyError(f"unknown incident: {incident_id}")
+        return tuple(self._occurrences[incident_id])
+
+    def _record_occurrence(
+        self,
+        *,
+        incident: IncidentRecord,
+        payload: Mapping[str, Any],
+        observed_at: datetime,
+        source_ref: str | None,
+    ) -> IncidentOccurrenceRecord:
+        records = self._occurrences.setdefault(incident.id, [])
+        occurrence = IncidentOccurrenceRecord(
+            id=self._id_factory(),
+            incident_id=incident.id,
+            ordinal=len(records) + 1,
+            payload=dict(payload),
+            payload_digest=subject_digest(payload),
+            observed_at=observed_at,
+            source_ref=source_ref,
+        )
+        records.append(occurrence)
+        return occurrence
 
     def append_event(
         self,
