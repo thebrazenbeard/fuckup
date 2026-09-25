@@ -21,6 +21,8 @@ V0.1 is intended as a vendor-neutral corrective-learning reference runtime and l
 - restart recovery is proven for PREPARED, ATTEMPTED, and AMBIGUOUS;
 - verified-outcome gaps are detectable and repairable without re-execution;
 - the reversible reference adapter rejects traversal, verifies state, supports exact replay, and rolls back safely;
+- Python support is bounded to the qualified 3.12+ floor;
+- the `postgres` install extra provides psycopg without dragging in the test framework;
 - wheel build, clean-environment install, and import smoke test pass;
 - README, trust boundaries, database authority, execution spec, and recovery runbook agree on claim ceiling.
 

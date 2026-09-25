@@ -35,6 +35,39 @@ The current review branch expands the protocol into an executable corrective-lea
 
 Source presence and passing tests do not establish installation, deployment, runtime consumption, or effectiveness in a production system.
 
+## Install and reference path
+
+V0.1 is qualified on Python 3.12+.
+
+Core library:
+
+`python -m pip install fuckup-protocol`
+
+PostgreSQL-backed execution store:
+
+`python -m pip install "fuckup-protocol[postgres]"`
+
+A minimal reversible reference path is:
+
+```python
+from pathlib import Path
+from fuckup_protocol import (
+    ExecutionCoordinator,
+    OperationJournal,
+    PluginRegistry,
+    ReferenceFileInjector,
+)
+
+registry = PluginRegistry()
+adapter = ReferenceFileInjector(Path("./fuckup-state"))
+adapter.register(registry)
+
+# Supply an exact active InjectionBinding and a host currentness validator.
+# Protected effects additionally require an authority evidence reference.
+```
+
+The filesystem adapter is for qualification/examples. Production adapters must supply their own readback and authority integration.
+
 ## Repository map
 
 - `PROTOCOL.md` — canonical six-stage protocol text.
