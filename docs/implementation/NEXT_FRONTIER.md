@@ -1,52 +1,42 @@
 # Next Implementation Frontier
 
-Status: UPDATED AFTER EXECUTION-INTEGRITY V2
-Validated implementation cut: `1fb9e190eeb5974fdfc9c37a5547004793ddd6f4`
+Status: GOVERNED INJECTOR EXECUTION V1 IMPLEMENTED IN CURRENT REVIEW BRANCH
+Base head for this slice: `ae2d8c4956fcf71e092e20ce5c9ad84a4f681e71`
 
 ## What is now implemented
 
-The review branch already contains the original vertical-slice foundations: incident/correction ledgers, fingerprinting/idempotency, explicit lifecycle states, ambiguity handling, qualification, policy gates, scoped promotion/bindings, worker retry/DLQ behavior, PostgreSQL authority separation, and recurrence summaries.
+The review branch contains the corrective-learning vertical slice, Execution Integrity V2, and the governed injector-execution boundary.
 
-Execution Integrity V2 additionally adds:
+Governed injector execution now provides:
 
-- append-only per-occurrence evidence for deduplicated incidents;
-- canonical effect-operation identity and idempotency collision detection;
-- `PREPARED -> ATTEMPTED -> AMBIGUOUS/VERIFIED/FAILED` effect history;
-- mandatory readback evidence before an ambiguous attempt can become verified;
-- exact correction/scope/promotion/binding attribution for effectiveness observations;
-- PostgreSQL persistence, guarded functions, runtime-role restrictions, and live qualification cases for those rules.
+- deterministic selection of exactly one active binding or fail-closed conflict/no-match behavior;
+- explicit executable binding identity: promotion id, adapter name, adapter version, selector digest, correction id/revision;
+- mandatory host-supplied binding-currentness validation immediately before a new execution;
+- exact injector-version resolution plus a registered adapter-specific readback function;
+- effect-operation preparation before handler invocation and ATTEMPTED state before the adapter is called;
+- protected-effect denial unless a separate host authority seam explicitly admits that exact binding/handler/target/payload;
+- VERIFIED, FAILED, and AMBIGUOUS readback classification;
+- VERIFIED requiring observed target state rather than a label-only assertion;
+- no ACTIVE effectiveness observation unless readback is VERIFIED;
+- exact observation binding to correction revision, scope digest, promotion, binding, operation, effect digest, and verification evidence;
+- blind redispatch rejection after ATTEMPTED/AMBIGUOUS state;
+- reconciliation of a prior ambiguous attempt even if the binding is later revoked or superseded;
+- PostgreSQL adapter-version continuity through authorizer-only versioned binding creation.
 
-## Next bounded frontier: governed injector execution
+## Next bounded frontier: durable execution repository and reference adapter
 
-The next useful slice is not another storage abstraction. It is the missing seam between an active injection binding and an actual adapter call.
+The current coordinator is a reference execution boundary over in-memory Python objects plus durable PostgreSQL contracts. The next useful slice is to make one complete host-consumable path restart-safe without broadening authority.
 
-Build one `ExecutionCoordinator`-style boundary that:
+That slice should:
 
-1. resolves exactly one active binding for a supplied selector;
-2. resolves the registered injector without executing it implicitly;
-3. creates an effect operation before any reversible/protected write;
-4. executes only effects permitted by the caller's already-established authority;
-5. records the attempt;
-6. verifies the adapter result through an adapter-specific readback seam;
-7. reconciles the operation to `VERIFIED`, `FAILED`, or `AMBIGUOUS`;
-8. records an exact-subject outcome observation;
-9. refuses blind retry when the prior attempt is ambiguous.
-
-## Acceptance criteria
-
-A testable end-to-end reference path should prove:
-
-1. an active binding selects one injector deterministically;
-2. no binding or conflicting bindings fail closed;
-3. a pure/read-only handler does not manufacture write authority;
-4. a reversible write is prepared before execution and verified afterward;
-5. a simulated lost response leaves the operation ambiguous;
-6. retry is blocked until readback reconciliation;
-7. successful readback produces a bound effectiveness observation;
-8. revocation or supersession prevents later application;
-9. a changed correction revision cannot reuse stale qualification/binding evidence;
-10. the full existing suite remains green.
+1. load executable bindings from the durable `active_injection_bindings` projection by exact context;
+2. implement a PostgreSQL-backed operation-journal adapter over the existing guarded functions;
+3. persist verified outcome observations with exact operation/binding provenance;
+4. provide one deliberately simple reversible reference injector and readback implementation;
+5. prove restart recovery from PREPARED, ATTEMPTED, and AMBIGUOUS operation states;
+6. prove revocation/supersession blocks new execution while still allowing reconciliation of a prior attempt;
+7. retain the separate protected-effect authority seam rather than turning promotion into general write permission.
 
 ## Deferred deliberately
 
-Statistical causal claims, distributed transport, model-weight mutation, automatic deployment, automatic rollback, and cross-repository orchestration remain outside this frontier. They should be added only when a concrete consumer forces the requirement.
+Model-weight mutation, autonomous deployment, automatic rollback, distributed transport, causal-effect claims, and cross-repository orchestration remain outside this frontier.

@@ -148,6 +148,9 @@ class OperationJournal:
         self._by_idempotency[idempotency_key] = intent.id
         return intent, False
 
+    def intent(self, operation_id: str) -> OperationIntent:
+        return self._records[operation_id].intent
+
     def state(self, operation_id: str) -> OperationState:
         return self._records[operation_id].state
 

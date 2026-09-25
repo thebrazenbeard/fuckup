@@ -34,6 +34,9 @@ class OutcomeObservation:
     prevented: bool = False
     regression: bool = False
     subject: EffectivenessSubject | None = None
+    operation_id: str | None = None
+    effect_digest: str | None = None
+    verification_evidence_ref: str | None = None
 
 
 class EffectivenessState(StrEnum):

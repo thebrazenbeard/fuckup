@@ -8,7 +8,7 @@ from .ambiguity import (
     route_ambiguity,
 )
 from .authorization import PromotionAuthorization, authorize_promotion
-from .bindings import BindingConflictError, InjectionBinding, resolve_binding, selector_within_scope
+from .bindings import BindingConflictError, InjectionBinding, resolve_binding, selector_digest, selector_within_scope
 from .effectiveness import (
     EffectivenessState,
     EffectivenessSubject,
@@ -18,6 +18,16 @@ from .effectiveness import (
     summarize_effectiveness,
 )
 from .events import FuckupEvent, lifecycle_event_type
+from .execution import (
+    ExecutionCoordinator,
+    ExecutionResult,
+    InjectorReadback,
+    NoActiveBindingError,
+    NonExecutableBindingError,
+    ProtectedEffectDeniedError,
+    ReadbackDisposition,
+    StaleBindingError,
+)
 from .experiment import (
     ExperimentCondition,
     ExperimentOutcome,
@@ -60,6 +70,7 @@ from .plugins import (
     HandlerFamily,
     HandlerSpec,
     PluginRegistry,
+    MissingInjectorReadbackError,
     SideEffectClass,
     UnknownHandlerError,
 )
@@ -79,6 +90,8 @@ __all__ = [
     "EffectivenessState",
     "EffectivenessSubject",
     "EffectivenessSummary",
+    "ExecutionCoordinator",
+    "ExecutionResult",
     "ExperimentCondition",
     "ExperimentOutcome",
     "FeedbackCondition",
@@ -89,12 +102,16 @@ __all__ = [
     "IncidentOccurrenceRecord",
     "InMemoryLedger",
     "InjectionBinding",
+    "InjectorReadback",
     "InvalidJobTransition",
     "InvalidOperationTransition",
     "InvalidTransition",
     "JobState",
     "JobStatus",
     "LabelCondition",
+    "MissingInjectorReadbackError",
+    "NoActiveBindingError",
+    "NonExecutableBindingError",
     "ObservationPhase",
     "OperationEvent",
     "OperationIntent",
@@ -107,12 +124,15 @@ __all__ = [
     "PromotionContext",
     "PromotionPolicy",
     "PromotionRejectedError",
+    "ProtectedEffectDeniedError",
     "ProtocolNameCondition",
     "ProvenanceKind",
     "ProvenanceRef",
     "QualificationResult",
+    "ReadbackDisposition",
     "SerializationCondition",
     "SideEffectClass",
+    "StaleBindingError",
     "StaleQualificationError",
     "StrictPromotionPolicy",
     "TestKind",
@@ -132,6 +152,7 @@ __all__ = [
     "recover_expired_lease",
     "require_transition",
     "resolve_binding",
+    "selector_digest",
     "selector_within_scope",
     "route_ambiguity",
     "subject_digest",

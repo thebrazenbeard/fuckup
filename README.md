@@ -25,6 +25,8 @@ The current review branch expands the protocol into an executable corrective-lea
 - effect-bound idempotency and a `PREPARED -> ATTEMPTED -> VERIFIED | FAILED | AMBIGUOUS` operation journal;
 - readback-gated reconciliation so ambiguous effects are not blindly redispatched;
 - exact-subject recurrence/effectiveness attribution;
+- governed injector execution from exact active binding through adapter-specific readback and bound outcome observation;
+- exact adapter-version pinning for executable bindings, with legacy unversioned bindings rejected by the execution coordinator;
 - PostgreSQL worker retry/DLQ and transactional outbox mechanics;
 - trusted-schema runtime/authorizer role separation and guarded promotion authority;
 - hostile tests for stale evidence, fabricated authority, privilege escape, collisions, and illegal lifecycle transitions.

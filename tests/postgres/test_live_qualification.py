@@ -17,6 +17,7 @@ MIGRATIONS = (
     Path("migrations/0002_runtime_authority.sql").read_text(),
     Path("migrations/0003_authorization_continuity.sql").read_text(),
     Path("migrations/0004_execution_integrity.sql").read_text(),
+    Path("migrations/0005_governed_injector_execution.sql").read_text(),
 )
 
 
@@ -1073,3 +1074,96 @@ def test_runtime_role_has_guarded_effect_journal_without_direct_dml(db):
             )
         )
         conn.execute(sql.SQL("DROP ROLE IF EXISTS {}").format(sql.Identifier(role)))
+
+def test_versioned_binding_is_authorizer_only_and_persists_exact_adapter_version(db):
+    conn, schema = db
+    privilege = conn.execute(
+        """
+        SELECT rolsuper OR rolcreaterole
+        FROM pg_catalog.pg_roles
+        WHERE rolname = current_user
+        """
+    ).fetchone()[0]
+    if not privilege:
+        pytest.skip("test database user needs SUPERUSER or CREATEROLE for authority-role qualification")
+
+    authorizer = f"fuckup_authorizer_{uuid4().hex[:16]}"
+    runtime = f"fuckup_runtime_{uuid4().hex[:16]}"
+    current_user = conn.execute("SELECT current_user").fetchone()[0]
+    incident, correction, qualification, promotion, binding, *_ = _ids()
+
+    try:
+        _incident(conn, incident)
+        _correction(conn, incident, correction, digest="sha256:a")
+        _qualification(conn, qualification, correction, 1, "sha256:a")
+        _promotion(conn, promotion, correction, 1, "sha256:a", qualification)
+
+        for role in (authorizer, runtime):
+            conn.execute(sql.SQL("CREATE ROLE {} NOLOGIN").format(sql.Identifier(role)))
+            conn.execute(
+                sql.SQL("GRANT {} TO {}").format(
+                    sql.Identifier(role),
+                    sql.Identifier(current_user),
+                )
+            )
+
+        conn.execute("SELECT configure_fuckup_authorizer_role(%s::name)", (authorizer,))
+        conn.execute("SELECT configure_fuckup_runtime_role(%s::name)", (runtime,))
+
+        conn.execute(sql.SQL("SET ROLE {}").format(sql.Identifier(runtime)))
+        with pytest.raises(psycopg.errors.InsufficientPrivilege):
+            conn.execute(
+                """
+                SELECT * FROM create_versioned_authorized_binding(
+                    %s,%s,'memory-injector','1',
+                    '{"agent":"demo","task":"code"}'::jsonb,
+                    'sha256:selector',0,'FAIL_CLOSED',NULL
+                )
+                """,
+                (binding, promotion),
+            ).fetchall()
+
+        conn.execute("RESET ROLE")
+        conn.execute(sql.SQL("SET ROLE {}").format(sql.Identifier(authorizer)))
+        created = conn.execute(
+            """
+            SELECT id, adapter, adapter_version
+            FROM create_versioned_authorized_binding(
+                %s,%s,'memory-injector','1',
+                '{"agent":"demo","task":"code"}'::jsonb,
+                'sha256:selector',0,'FAIL_CLOSED',NULL
+            )
+            """,
+            (binding, promotion),
+        ).fetchone()
+        assert created == (binding, "memory-injector", "1")
+
+        active = conn.execute(
+            """
+            SELECT id, promotion_id, adapter, adapter_version, correction_id, correction_revision
+            FROM active_injection_bindings
+            WHERE id = %s
+            """,
+            (binding,),
+        ).fetchone()
+        assert active == (
+            binding,
+            promotion,
+            "memory-injector",
+            "1",
+            correction,
+            1,
+        )
+    finally:
+        conn.execute("RESET ROLE")
+        for role in (runtime, authorizer):
+            conn.execute(sql.SQL("DROP OWNED BY {}").format(sql.Identifier(role)))
+        conn.execute(
+            sql.SQL("REVOKE {}, {} FROM {}").format(
+                sql.Identifier(runtime),
+                sql.Identifier(authorizer),
+                sql.Identifier(current_user),
+            )
+        )
+        for role in (runtime, authorizer):
+            conn.execute(sql.SQL("DROP ROLE IF EXISTS {}").format(sql.Identifier(role)))

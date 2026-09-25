@@ -150,3 +150,24 @@ Runtime binding restriction is monotonic:
 - expiry cannot be removed or extended.
 
 Any broader activation requires a fresh authorization artifact.
+
+
+## Governed injector execution continuity
+
+`migrations/0005_governed_injector_execution.sql` extends binding authority without silently rewriting historical rows.
+
+It adds nullable `injection_bindings.adapter_version` so existing bindings remain legible as historical records, then adds an authorizer-only:
+
+`create_versioned_authorized_binding(...)`
+
+A new executable binding must therefore pin both adapter name and adapter version. The generic runtime role is explicitly denied this function; the configured authorizer role receives it through the same guarded authority boundary used for promotion/binding creation.
+
+The `active_injection_bindings` view exposes adapter version together with promotion, correction revision, activation scope, selector digest, expiry, and currentness filtering. An unversioned historical row may still appear as active data, but the Python execution coordinator rejects it as non-executable rather than inventing a version.
+
+Runtime execution currentness and reconciliation are deliberately different:
+
+- new adapter execution must revalidate the exact binding as current immediately before effect preparation;
+- revocation or supersession must block a new execution;
+- a prior ATTEMPTED/AMBIGUOUS effect may still be read back and reconciled after later revocation, because current authority cannot erase uncertainty about an effect already attempted.
+
+This migration does not install an adapter, authorize a protected effect, or prove a target consumed an effect.

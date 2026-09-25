@@ -122,3 +122,16 @@ Future cryptographic attestations can strengthen authorizer provenance, but the
 core security invariant is already explicit: **the actor proposing or executing
 ordinary runtime work is not the actor that grants durable behavioral
 authority.**
+
+
+## Governed execution boundary
+
+An active correction binding is not generic external-effect authority.
+
+`ExecutionCoordinator` requires an executable binding to identify the exact promotion, correction revision, selector, adapter, and adapter version. Before a new attempt, a host-supplied currentness validator must confirm that exact binding is still current. The coordinator then prepares and records the operation before invoking the adapter.
+
+Injector readback is a separate trust seam. A handler return is evidence that the handler returned, not that the target consumed the requested effect. VERIFIED therefore requires adapter-specific observed target state; FAILED and AMBIGUOUS do not create effectiveness observations.
+
+A handler declaring `PROTECTED_EFFECT` is denied unless a separate host-provided authority function admits the exact binding, handler/version, target, and payload. Promotion or binding existence does not manufacture that authority.
+
+Currentness gates new attempts only. If an external attempt has already occurred, later revocation does not prevent readback reconciliation of that historical attempt. Otherwise authority revocation could convert an uncertain external effect into permanent epistemic blindness.
