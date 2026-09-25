@@ -7,7 +7,7 @@ name = "fuckup-protocol"
 version = "0.1.0"
 description = "Vendor-neutral corrective-learning protocol runtime"
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.12"
 
 [project.optional-dependencies]
 test = [

@@ -262,7 +262,7 @@ class PostgresExecutionStore:
                 FROM active_injection_bindings
                 WHERE adapter_version IS NOT NULL
                   AND %s::jsonb @> selector
-                ORDER BY priority DESC, jsonb_object_length(selector) DESC, id
+                ORDER BY priority DESC, id
                 """,
                 (encoded,),
             ).fetchall()
