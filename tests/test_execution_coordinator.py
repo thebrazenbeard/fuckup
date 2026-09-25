@@ -397,7 +397,9 @@ def test_protected_effect_can_execute_only_when_exact_authority_seam_admits_it()
 
     def authorize(binding, spec, target, payload):
         seen.append((binding.id, spec.name, spec.version, target, dict(payload)))
-        return binding.id == "bind-1" and target == "weights:model"
+        if binding.id == "bind-1" and target == "weights:model":
+            return "authority:current-task"
+        return None
 
     coordinator = ExecutionCoordinator(
         registry=_registry(side_effect=SideEffectClass.PROTECTED_EFFECT),
@@ -417,3 +419,21 @@ def test_protected_effect_can_execute_only_when_exact_authority_seam_admits_it()
         ("bind-1", "memory-injector", "1", "weights:model", {"rule": "x"})
     ]
     assert result.operation_state == OperationState.VERIFIED
+
+
+def test_protected_effect_boolean_admission_without_evidence_reference_is_rejected():
+    coordinator = ExecutionCoordinator(
+        registry=_registry(side_effect=SideEffectClass.PROTECTED_EFFECT),
+        operations=OperationJournal(),
+        binding_currentness_validator=_current,
+        protected_effect_authorizer=lambda binding, spec, target, payload: True,
+    )
+
+    with pytest.raises(ProtectedEffectDeniedError, match="authority evidence reference"):
+        coordinator.execute(
+            bindings=(_binding(),),
+            context={"agent": "demo", "task": "code"},
+            target="weights:model",
+            effect_payload={"rule": "x"},
+            idempotency_key="inject:protected-no-evidence",
+        )

@@ -18,7 +18,7 @@ Each stage is evidence for that stage only. In particular:
 - only adapter-specific readback may produce VERIFIED;
 - only VERIFIED may produce an ACTIVE effectiveness observation;
 - AMBIGUOUS blocks blind redispatch until reconciliation;
-- a protected-effect handler is denied unless a separate host-provided authority seam explicitly admits it;
+- a protected-effect handler is denied unless a separate host-provided authority seam explicitly admits it and returns a non-empty authority evidence reference;
 - binding currentness is revalidated immediately before each new execution;
 - revocation/supersession blocks new execution but does not erase the duty to reconcile an already-attempted ambiguous effect.
 
@@ -50,7 +50,7 @@ Before handler execution, the coordinator prepares an `OperationIntent` whose di
 - requested effect payload;
 - target and injector operation kind.
 
-The journal then records ATTEMPTED before the handler is invoked.
+The journal then records ATTEMPTED before the handler is invoked. For protected effects, the prepared operation payload also carries the authority evidence reference returned by the host authority seam, so authorization provenance participates in the operation identity rather than disappearing into an in-memory boolean.
 
 Reusing the same idempotency key for a different effect is a collision. Reusing it for an already ATTEMPTED or AMBIGUOUS operation cannot redispatch the handler.
 

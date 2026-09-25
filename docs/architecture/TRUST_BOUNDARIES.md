@@ -132,6 +132,6 @@ An active correction binding is not generic external-effect authority.
 
 Injector readback is a separate trust seam. A handler return is evidence that the handler returned, not that the target consumed the requested effect. VERIFIED therefore requires adapter-specific observed target state; FAILED and AMBIGUOUS do not create effectiveness observations.
 
-A handler declaring `PROTECTED_EFFECT` is denied unless a separate host-provided authority function admits the exact binding, handler/version, target, and payload. Promotion or binding existence does not manufacture that authority.
+A handler declaring `PROTECTED_EFFECT` is denied unless a separate host-provided authority function admits the exact binding, handler/version, target, and payload and returns a non-empty authority evidence reference. That reference is embedded in the prepared operation identity. Promotion or binding existence does not manufacture that authority, and a bare boolean admission is rejected.
 
 Currentness gates new attempts only. If an external attempt has already occurred, later revocation does not prevent readback reconciliation of that historical attempt. Otherwise authority revocation could convert an uncertain external effect into permanent epistemic blindness.

@@ -64,7 +64,7 @@ class StaleBindingError(PermissionError):
     pass
 
 
-ProtectedEffectAuthorizer = Callable[[InjectionBinding, HandlerSpec, str, Mapping[str, Any]], bool]
+ProtectedEffectAuthorizer = Callable[[InjectionBinding, HandlerSpec, str, Mapping[str, Any]], str | None]
 BindingCurrentnessValidator = Callable[[InjectionBinding], bool]
 
 
@@ -126,7 +126,7 @@ class ExecutionCoordinator:
             binding.adapter,
             binding.adapter_version,
         )
-        self._authorize_side_effect(
+        authority_ref = self._authorize_side_effect(
             binding=binding,
             spec=spec,
             target=target,
@@ -137,6 +137,7 @@ class ExecutionCoordinator:
             binding=binding,
             context=context,
             effect_payload=effect_payload,
+            authority_ref=authority_ref,
         )
         operation, _duplicate = self._operations.prepare(
             target=target,
@@ -233,22 +234,24 @@ class ExecutionCoordinator:
         spec: HandlerSpec,
         target: str,
         effect_payload: Mapping[str, Any],
-    ) -> None:
+    ) -> str | None:
         if spec.side_effect != SideEffectClass.PROTECTED_EFFECT:
-            return
+            return None
         if self._protected_effect_authorizer is None:
             raise ProtectedEffectDeniedError(
                 "protected injector effect requires separate exact authority"
             )
-        if not self._protected_effect_authorizer(
+        authority_ref = self._protected_effect_authorizer(
             binding,
             spec,
             target,
             effect_payload,
-        ):
+        )
+        if not isinstance(authority_ref, str) or not authority_ref.strip():
             raise ProtectedEffectDeniedError(
-                "protected injector effect was not authorized"
+                "protected injector effect requires an authority evidence reference"
             )
+        return authority_ref
 
     @staticmethod
     def _require_executable_binding(binding: InjectionBinding) -> None:
@@ -263,6 +266,7 @@ class ExecutionCoordinator:
         binding: InjectionBinding,
         context: Mapping[str, str],
         effect_payload: Mapping[str, Any],
+        authority_ref: str | None,
     ) -> dict[str, Any]:
         return {
             "binding_id": binding.id,
@@ -274,6 +278,7 @@ class ExecutionCoordinator:
             "activation_scope": dict(binding.activation_scope),
             "adapter": binding.adapter,
             "adapter_version": binding.adapter_version,
+            "authority_ref": authority_ref,
             "context": dict(context),
             "effect_payload": _plain(effect_payload),
         }
