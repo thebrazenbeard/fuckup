@@ -97,3 +97,17 @@
 ## Unresolved product decisions
 
 None required for this bounded slice. Automatic retry policy, statistical confidence thresholds, and automatic rollback remain intentionally outside scope rather than silently chosen.
+
+
+## Execution record — 2026-09-25
+
+Implementation cut: `1fb9e190eeb5974fdfc9c37a5547004793ddd6f4`.
+
+Confirmed locally:
+- operation-journal red/green cycle established and focused tests pass;
+- duplicate occurrence evidence and exact-subject effectiveness tests pass;
+- SQL source-contract tests pass;
+- full local suite passes: 112 tests;
+- `git diff --check` passes.
+
+Live PostgreSQL qualification is wired into the suite but was not executed locally because `FUCKUP_TEST_DATABASE_URL` was unavailable. CI with its PostgreSQL 16 service is the intended next verification layer.

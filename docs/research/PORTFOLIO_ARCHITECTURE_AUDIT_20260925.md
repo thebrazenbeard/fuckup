@@ -13,7 +13,7 @@ The earlier Discovery census recorded 59 repositories on 2026-09-22, so that cen
 
 ## Audit method
 
-Every accessible repository received metadata triage. Public repositories received README/source-orientation review where available. Repositories with plausible reusable mechanics received deeper source/contract inspection. A mechanism was considered for adoption only when it matched an existing F.U.C.K.U.P. gap; thematic similarity alone was not enough.
+Every accessible repository received metadata triage. Public and private repositories received README/source-orientation review where available; private names/details are not published here merely because the audit could read them. Repositories with plausible reusable mechanics received deeper source/contract inspection. A mechanism was considered for adoption only when it matched an existing F.U.C.K.U.P. gap; thematic similarity alone was not enough. The private-repository pass reinforced the same durable-event, exact-frontier, recovery, authority, and evidence-boundary patterns and did not justify adding a private repository as a F.U.C.K.U.P. runtime dependency.
 
 ## Public portfolio disposition
 
@@ -61,13 +61,17 @@ At the inspected Draft PR #1 head it already has:
 - narrow activation scopes and monotonic binding restriction;
 - hostile tests for fabricated authority and privilege bypass.
 
-### Highest-value gaps
+### Highest-value gaps at audit start
 
-1. **Deduplication currently loses per-occurrence evidence.** The incident counter grows, but a repeated observation is not independently preserved.
-2. **Effect ambiguity lacks a first-class portable journal.** Existing idempotency helps, but it does not itself encode PREPARED/ATTEMPTED/AMBIGUOUS/readback recovery.
-3. **Effectiveness attribution is too weak.** Observations can be summarized without proving they belong to one exact correction/promotion/binding subject.
-4. **The handoff/current docs lag implementation reality.** The branch has substantially outgrown the old “next frontier” wording.
-5. **Portfolio provenance is not yet recorded in-repo for the current build.** The project has GitHub landscape research, but not this current portfolio-wide architecture cut.
+1. **Deduplication lost per-occurrence evidence.** The incident counter grew, but a repeated observation was not independently preserved.
+2. **Effect ambiguity lacked a first-class portable journal.** Existing idempotency did not itself encode PREPARED/ATTEMPTED/AMBIGUOUS/readback recovery.
+3. **Effectiveness attribution was too weak.** Observations could be summarized without proving they belonged to one exact correction/promotion/binding subject.
+4. **The handoff/current docs lagged implementation reality.**
+5. **Portfolio provenance was not recorded in-repo for the current build.**
+
+### Resolution in this build
+
+Implementation cut `1fb9e190eeb5974fdfc9c37a5547004793ddd6f4` resolves gaps 1–3 at source level and adds PostgreSQL contracts/live-test cases for the same invariants. This audit plus the refreshed README/handoff resolves gaps 4–5 at repository-documentation level. None of those source changes by themselves establish deployment, live database installation, runtime consumption, or production effectiveness.
 
 ## Adopt / defer decisions
 

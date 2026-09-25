@@ -111,3 +111,25 @@ Implement the minimum vertical slice:
 6. Tests for duplicate submission, ambiguous classification, worker collision, retry exhaustion, supersession, stale qualification, and rollback.
 
 No merge, deployment, installation, or runtime effect is authorized by this handoff.
+
+## Continuation update — 2026-09-25
+
+The 2026-09-23 frontier above is now historical. The current implementation work is on `build/portfolio-integrity-v2-20260925`, based on Draft PR #1 head `ff46bcf822a89701201e6153be923239814e5b61`.
+
+Validated implementation cut:
+
+`1fb9e190eeb5974fdfc9c37a5547004793ddd6f4`
+
+That cut adds:
+
+- append-only incident occurrence evidence for deduplicated failures;
+- portable effect-operation journaling with exact effect digests and idempotency collision detection;
+- `PREPARED -> ATTEMPTED -> AMBIGUOUS/VERIFIED/FAILED` recovery semantics;
+- readback evidence requirements before verification;
+- exact-subject effectiveness attribution;
+- PostgreSQL execution-integrity tables/functions and runtime-role restrictions;
+- live PostgreSQL hostile cases for collision, blind redispatch, terminal reopening, occurrence evidence, and direct-DML denial.
+
+Local source qualification on the implementation cut: 112 tests passed; the live PostgreSQL module was skipped locally because `FUCKUP_TEST_DATABASE_URL` was not present. CI/live PostgreSQL remains the next verification layer.
+
+The next implementation frontier is governed injector execution: resolve one active binding, prepare the effect before execution, invoke the injector, verify by adapter-specific readback, reconcile the operation, and record an exact-subject outcome.

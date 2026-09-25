@@ -1,95 +1,52 @@
 # Next Implementation Frontier
 
-## Objective
+Status: UPDATED AFTER EXECUTION-INTEGRITY V2
+Validated implementation cut: `1fb9e190eeb5974fdfc9c37a5547004793ddd6f4`
 
-Build one vertical slice proving that F.U.C.K.U.P. can receive a failure, preserve it durably, generate a correction candidate, qualify that exact candidate, promote it, and safely apply it to a future execution.
+## What is now implemented
 
-## Minimal slice
+The review branch already contains the original vertical-slice foundations: incident/correction ledgers, fingerprinting/idempotency, explicit lifecycle states, ambiguity handling, qualification, policy gates, scoped promotion/bindings, worker retry/DLQ behavior, PostgreSQL authority separation, and recurrence summaries.
 
-### Storage
+Execution Integrity V2 additionally adds:
 
-PostgreSQL migrations for:
+- append-only per-occurrence evidence for deduplicated incidents;
+- canonical effect-operation identity and idempotency collision detection;
+- `PREPARED -> ATTEMPTED -> AMBIGUOUS/VERIFIED/FAILED` effect history;
+- mandatory readback evidence before an ambiguous attempt can become verified;
+- exact correction/scope/promotion/binding attribution for effectiveness observations;
+- PostgreSQL persistence, guarded functions, runtime-role restrictions, and live qualification cases for those rules.
 
-- incidents
-- append-only events
-- root-cause candidates
-- corrections + revisions
-- qualifications
-- promotions
-- injection bindings
-- worker jobs / dead letter state or integration with a proven queue library
+## Next bounded frontier: governed injector execution
 
-### Runtime contracts
+The next useful slice is not another storage abstraction. It is the missing seam between an active injection binding and an actual adapter call.
 
-Implement typed interfaces for:
+Build one `ExecutionCoordinator`-style boundary that:
 
-- normalizer
-- fingerprinter
-- analyzer
-- ambiguity resolver
-- correction generator
-- qualifier
-- policy gate
-- injector
-- recurrence observer
-
-### Worker semantics
-
-Prove:
-
-- two workers cannot process the same claimed job concurrently;
-- duplicate submissions collapse under the intended idempotency/fingerprint rules;
-- retryable and non-retryable failures are distinct;
-- retry budget exhaustion dead-letters cleanly;
-- a lost response after a successful side effect is safe to retry/read back;
-- a stale qualification cannot promote a changed correction revision.
-
-### Qualification
-
-At minimum:
-
-- replay the original failure;
-- assert the correction changes the intended outcome;
-- run regression examples around neighboring behavior;
-- add a property-based test for schema/lifecycle invariants;
-- test an ambiguous case;
-- test an intentionally failing adapter and circuit/quarantine behavior.
-
-### Promotion
-
-Promotion should require:
-
-- exact correction revision;
-- current qualification for that revision;
-- policy decision;
-- activation scope;
-- rollback condition;
-- provenance.
-
-### Injection
-
-Start with one simple adapter, such as a retrieved instruction/rule injection interface. Do not make model-weight changes a prerequisite.
-
-Record:
-
-- what correction was injected;
-- into which target;
-- selector/scope;
-- version/digest;
-- result;
-- recurrence evidence.
+1. resolves exactly one active binding for a supplied selector;
+2. resolves the registered injector without executing it implicitly;
+3. creates an effect operation before any reversible/protected write;
+4. executes only effects permitted by the caller's already-established authority;
+5. records the attempt;
+6. verifies the adapter result through an adapter-specific readback seam;
+7. reconciles the operation to `VERIFIED`, `FAILED`, or `AMBIGUOUS`;
+8. records an exact-subject outcome observation;
+9. refuses blind retry when the prior attempt is ambiguous.
 
 ## Acceptance criteria
 
-The vertical slice is not complete until a test demonstrates:
+A testable end-to-end reference path should prove:
 
-1. failure A is recorded;
-2. duplicate A is deduplicated but occurrence count/evidence is preserved;
-3. a correction candidate is created;
-4. ambiguous root cause cannot silently promote;
-5. exact correction revision passes qualification;
-6. promotion creates an active injection binding;
-7. replayed future execution uses the binding;
-8. recurrence/result is recorded;
-9. changing the correction makes the old qualification stale;
-10. revocation stops future application without deleting the historical record.
+1. an active binding selects one injector deterministically;
+2. no binding or conflicting bindings fail closed;
+3. a pure/read-only handler does not manufacture write authority;
+4. a reversible write is prepared before execution and verified afterward;
+5. a simulated lost response leaves the operation ambiguous;
+6. retry is blocked until readback reconciliation;
+7. successful readback produces a bound effectiveness observation;
+8. revocation or supersession prevents later application;
+9. a changed correction revision cannot reuse stale qualification/binding evidence;
+10. the full existing suite remains green.
+
+## Deferred deliberately
+
+Statistical causal claims, distributed transport, model-weight mutation, automatic deployment, automatic rollback, and cross-repository orchestration remain outside this frontier. They should be added only when a concrete consumer forces the requirement.
