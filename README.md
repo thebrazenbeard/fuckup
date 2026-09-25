@@ -15,9 +15,9 @@ A vendor-neutral corrective-learning protocol and reference runtime for turning 
 
 “Unlearn” means versioned supersession, not destructive forgetting. “Prevent” means the strongest prevention state the evidence supports; it is not a magic guarantee that a class of failure can never recur.
 
-## Runtime candidate
+## Runtime
 
-The current review branch expands the protocol into an executable corrective-learning core with:
+V0.1 provides an executable corrective-learning core with:
 
 - immutable/versioned correction records and exact-revision qualification;
 - ambiguity, validation, policy, promotion, binding, and revocation semantics;
@@ -94,4 +94,4 @@ Run the source suite with:
 
 Live PostgreSQL qualification additionally requires `FUCKUP_TEST_DATABASE_URL`.
 
-The default branch remains authoritative only after an authorized merge. Draft/review branches are implementation candidates, not deployment.
+`main` is the authoritative source branch. The `v0.1.0` tag and GitHub release identify the first launched reference-runtime cut; later `main` commits may contain post-release maintenance or release tooling.
