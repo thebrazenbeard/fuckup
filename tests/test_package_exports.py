@@ -16,5 +16,13 @@ def test_critical_root_exports_are_available():
         "summarize_effectiveness",
         "factorial_conditions",
         "assess_ambiguity",
+        "OperationJournal",
+        "OperationState",
+        "EffectivenessSubject",
+        "IncidentOccurrenceRecord",
+        "ExecutionCoordinator",
+        "InjectorReadback",
+        "ReadbackDisposition",
+        "selector_digest",
     ]:
         assert hasattr(fuckup_protocol, name)

@@ -165,3 +165,38 @@ def test_failed_qualification_cannot_promote_even_with_allow_policy():
             qualification_id="q-fail",
             authorization=_authorization(correction, qualification),
         )
+
+
+def test_duplicate_incident_preserves_each_occurrence_as_evidence():
+    ledger = InMemoryLedger(id_factory=_ids())
+    incident, _ = ledger.submit_incident(
+        fingerprint="fp",
+        fingerprint_version="v1",
+        payload={"error": "boom", "attempt": 1},
+        source_ref="run:1",
+    )
+    ledger.submit_incident(
+        fingerprint="fp",
+        fingerprint_version="v1",
+        payload={"error": "boom", "attempt": 2},
+        source_ref="run:2",
+    )
+
+    occurrences = ledger.occurrences(incident.id)
+    assert [item.ordinal for item in occurrences] == [1, 2]
+    assert [item.source_ref for item in occurrences] == ["run:1", "run:2"]
+    assert occurrences[0].payload_digest != occurrences[1].payload_digest
+
+
+def test_occurrence_payload_is_deeply_immutable():
+    payload = {"error": {"codes": [1, 2]}}
+    ledger = InMemoryLedger(id_factory=_ids())
+    incident, _ = ledger.submit_incident(
+        fingerprint="fp",
+        fingerprint_version="v1",
+        payload=payload,
+    )
+    occurrence = ledger.occurrences(incident.id)[0]
+
+    payload["error"]["codes"].append(3)
+    assert occurrence.payload["error"]["codes"] == (1, 2)

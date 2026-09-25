@@ -1,95 +1,16 @@
 # Next Implementation Frontier
 
-## Objective
+Status: V0.1 LAUNCH HARDENING
 
-Build one vertical slice proving that F.U.C.K.U.P. can receive a failure, preserve it durably, generate a correction candidate, qualify that exact candidate, promote it, and safely apply it to a future execution.
+The governed execution boundary, durable PostgreSQL execution store, verified-outcome persistence, restart recovery, and reversible reference adapter are implemented on the current review branch.
 
-## Minimal slice
+## Remaining launch-hardening work
 
-### Storage
+1. Prove migration `0006_durable_execution_repository.sql` and the restart path against PostgreSQL 16 in exact-head CI.
+2. Re-run wheel build, clean-environment installation, and package import smoke tests on the frozen candidate.
+3. Run a hostile launch audit against the release gates in `docs/LAUNCH_READINESS.md`.
+4. Reconcile README, recovery runbook, database authority, and PR handoff to the exact verified head.
 
-PostgreSQL migrations for:
+Once those gates are green, further production adapters, deployment automation, model-weight mutation, causal inference, and cross-repository orchestration are post-V0.1 work rather than release blockers.
 
-- incidents
-- append-only events
-- root-cause candidates
-- corrections + revisions
-- qualifications
-- promotions
-- injection bindings
-- worker jobs / dead letter state or integration with a proven queue library
-
-### Runtime contracts
-
-Implement typed interfaces for:
-
-- normalizer
-- fingerprinter
-- analyzer
-- ambiguity resolver
-- correction generator
-- qualifier
-- policy gate
-- injector
-- recurrence observer
-
-### Worker semantics
-
-Prove:
-
-- two workers cannot process the same claimed job concurrently;
-- duplicate submissions collapse under the intended idempotency/fingerprint rules;
-- retryable and non-retryable failures are distinct;
-- retry budget exhaustion dead-letters cleanly;
-- a lost response after a successful side effect is safe to retry/read back;
-- a stale qualification cannot promote a changed correction revision.
-
-### Qualification
-
-At minimum:
-
-- replay the original failure;
-- assert the correction changes the intended outcome;
-- run regression examples around neighboring behavior;
-- add a property-based test for schema/lifecycle invariants;
-- test an ambiguous case;
-- test an intentionally failing adapter and circuit/quarantine behavior.
-
-### Promotion
-
-Promotion should require:
-
-- exact correction revision;
-- current qualification for that revision;
-- policy decision;
-- activation scope;
-- rollback condition;
-- provenance.
-
-### Injection
-
-Start with one simple adapter, such as a retrieved instruction/rule injection interface. Do not make model-weight changes a prerequisite.
-
-Record:
-
-- what correction was injected;
-- into which target;
-- selector/scope;
-- version/digest;
-- result;
-- recurrence evidence.
-
-## Acceptance criteria
-
-The vertical slice is not complete until a test demonstrates:
-
-1. failure A is recorded;
-2. duplicate A is deduplicated but occurrence count/evidence is preserved;
-3. a correction candidate is created;
-4. ambiguous root cause cannot silently promote;
-5. exact correction revision passes qualification;
-6. promotion creates an active injection binding;
-7. replayed future execution uses the binding;
-8. recurrence/result is recorded;
-9. changing the correction makes the old qualification stale;
-10. revocation stops future application without deleting the historical record.
+No merge, publication, installation, migration application, deployment, or activation is implied by launch readiness.

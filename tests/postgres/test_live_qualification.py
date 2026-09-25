@@ -16,6 +16,9 @@ MIGRATIONS = (
     Path("migrations/0001_core.sql").read_text(),
     Path("migrations/0002_runtime_authority.sql").read_text(),
     Path("migrations/0003_authorization_continuity.sql").read_text(),
+    Path("migrations/0004_execution_integrity.sql").read_text(),
+    Path("migrations/0005_governed_injector_execution.sql").read_text(),
+    Path("migrations/0006_durable_execution_repository.sql").read_text(),
 )
 
 
@@ -870,3 +873,548 @@ def test_same_role_cannot_be_runtime_and_authorizer(db):
     finally:
         conn.execute(sql.SQL("DROP OWNED BY {}").format(sql.Identifier(role)))
         conn.execute(sql.SQL("DROP ROLE IF EXISTS {}").format(sql.Identifier(role)))
+
+
+def test_execution_integrity_journal_requires_reconciliation_before_redispatch(db):
+    conn, _schema = db
+    operation = str(uuid4())
+    duplicate_id = str(uuid4())
+    key = f"effect:{uuid4()}"
+
+    created = conn.execute(
+        """
+        SELECT id FROM prepare_effect_operation(
+            %s,%s,'provider:demo','publish',
+            '{"artifact":"a"}'::jsonb,'sha256:a',now()
+        )
+        """,
+        (operation, key),
+    ).fetchone()[0]
+    assert str(created) == operation
+
+    duplicate = conn.execute(
+        """
+        SELECT id FROM prepare_effect_operation(
+            %s,%s,'provider:demo','publish',
+            '{"artifact":"a"}'::jsonb,'sha256:a',now()
+        )
+        """,
+        (duplicate_id, key),
+    ).fetchone()[0]
+    assert str(duplicate) == operation
+
+    with pytest.raises(psycopg.Error, match="idempotency key collision"):
+        conn.execute(
+            """
+            SELECT * FROM prepare_effect_operation(
+                %s,%s,'provider:demo','publish',
+                '{"artifact":"different"}'::jsonb,'sha256:different',now()
+            )
+            """,
+            (str(uuid4()), key),
+        ).fetchall()
+
+    attempted = conn.execute(
+        "SELECT state FROM record_effect_attempt(%s,'attempt:1',now())",
+        (operation,),
+    ).fetchone()[0]
+    assert attempted == "ATTEMPTED"
+
+    with pytest.raises(psycopg.Error, match="cannot attempt operation from state"):
+        conn.execute(
+            "SELECT * FROM record_effect_attempt(%s,'attempt:2',now())",
+            (operation,),
+        ).fetchall()
+
+    ambiguous = conn.execute(
+        """
+        SELECT state FROM reconcile_effect_operation(
+            %s,'AMBIGUOUS','timeout:1',NULL,now()
+        )
+        """,
+        (operation,),
+    ).fetchone()[0]
+    assert ambiguous == "AMBIGUOUS"
+
+    with pytest.raises(psycopg.Error, match="cannot attempt operation from state"):
+        conn.execute(
+            "SELECT * FROM record_effect_attempt(%s,'attempt:3',now())",
+            (operation,),
+        ).fetchall()
+
+    verified = conn.execute(
+        """
+        SELECT state FROM reconcile_effect_operation(
+            %s,'VERIFIED','readback:1','sha256:observed',now()
+        )
+        """,
+        (operation,),
+    ).fetchone()[0]
+    assert verified == "VERIFIED"
+
+    with pytest.raises(psycopg.Error, match="cannot reconcile operation from state"):
+        conn.execute(
+            """
+            SELECT * FROM reconcile_effect_operation(
+                %s,'FAILED','late-readback',NULL,now()
+            )
+            """,
+            (operation,),
+        ).fetchall()
+
+
+def test_incident_occurrence_preserves_duplicate_evidence(db):
+    conn, _schema = db
+    incident = str(uuid4())
+    first_occurrence = str(uuid4())
+    second_occurrence = str(uuid4())
+    _incident(conn, incident)
+
+    conn.execute(
+        """
+        SELECT id FROM record_incident_occurrence(
+            %s,%s,'{"attempt":1}'::jsonb,'sha256:one',now(),'run:1'
+        )
+        """,
+        (first_occurrence, incident),
+    ).fetchone()
+    conn.execute(
+        """
+        SELECT id FROM record_incident_occurrence(
+            %s,%s,'{"attempt":2}'::jsonb,'sha256:two',now(),'run:2'
+        )
+        """,
+        (second_occurrence, incident),
+    ).fetchone()
+
+    rows = conn.execute(
+        """
+        SELECT ordinal, payload_digest, source_ref
+        FROM incident_occurrences
+        WHERE incident_id = %s
+        ORDER BY ordinal
+        """,
+        (incident,),
+    ).fetchall()
+    assert rows == [
+        (1, "sha256:one", "run:1"),
+        (2, "sha256:two", "run:2"),
+    ]
+    assert conn.execute(
+        "SELECT occurrence_count FROM incidents WHERE id = %s",
+        (incident,),
+    ).fetchone()[0] == 2
+
+
+def test_runtime_role_has_guarded_effect_journal_without_direct_dml(db):
+    conn, schema = db
+    privilege = conn.execute(
+        """
+        SELECT rolsuper OR rolcreaterole
+        FROM pg_catalog.pg_roles
+        WHERE rolname = current_user
+        """
+    ).fetchone()[0]
+    if not privilege:
+        pytest.skip("test database user needs SUPERUSER or CREATEROLE for runtime-role qualification")
+
+    role = f"fuckup_runtime_{uuid4().hex[:16]}"
+    current_user = conn.execute("SELECT current_user").fetchone()[0]
+    operation = str(uuid4())
+    key = f"effect:{uuid4()}"
+
+    try:
+        conn.execute(sql.SQL("CREATE ROLE {} NOLOGIN").format(sql.Identifier(role)))
+        conn.execute(
+            sql.SQL("GRANT {} TO {}").format(
+                sql.Identifier(role),
+                sql.Identifier(current_user),
+            )
+        )
+        conn.execute("SELECT configure_fuckup_runtime_role(%s::name)", (role,))
+        conn.execute(sql.SQL("SET ROLE {}").format(sql.Identifier(role)))
+
+        with pytest.raises(psycopg.errors.InsufficientPrivilege):
+            conn.execute(
+                """
+                INSERT INTO effect_operations(
+                    id,idempotency_key,target,operation_kind,
+                    effect_payload,effect_digest
+                )
+                VALUES (
+                    %s,%s,'provider:demo','publish',
+                    '{}'::jsonb,'sha256:direct'
+                )
+                """,
+                (str(uuid4()), f"direct:{uuid4()}"),
+            )
+
+        created = conn.execute(
+            """
+            SELECT id FROM prepare_effect_operation(
+                %s,%s,'provider:demo','publish',
+                '{"artifact":"a"}'::jsonb,'sha256:a',now()
+            )
+            """,
+            (operation, key),
+        ).fetchone()[0]
+        assert str(created) == operation
+
+        state = conn.execute(
+            "SELECT state FROM record_effect_attempt(%s,'attempt:runtime',now())",
+            (operation,),
+        ).fetchone()[0]
+        assert state == "ATTEMPTED"
+    finally:
+        conn.execute("RESET ROLE")
+        conn.execute(sql.SQL("DROP OWNED BY {}").format(sql.Identifier(role)))
+        conn.execute(
+            sql.SQL("REVOKE {} FROM {}").format(
+                sql.Identifier(role),
+                sql.Identifier(current_user),
+            )
+        )
+        conn.execute(sql.SQL("DROP ROLE IF EXISTS {}").format(sql.Identifier(role)))
+
+def test_versioned_binding_is_authorizer_only_and_persists_exact_adapter_version(db):
+    conn, schema = db
+    privilege = conn.execute(
+        """
+        SELECT rolsuper OR rolcreaterole
+        FROM pg_catalog.pg_roles
+        WHERE rolname = current_user
+        """
+    ).fetchone()[0]
+    if not privilege:
+        pytest.skip("test database user needs SUPERUSER or CREATEROLE for authority-role qualification")
+
+    authorizer = f"fuckup_authorizer_{uuid4().hex[:16]}"
+    runtime = f"fuckup_runtime_{uuid4().hex[:16]}"
+    current_user = conn.execute("SELECT current_user").fetchone()[0]
+    incident, correction, qualification, promotion, binding, *_ = _ids()
+
+    try:
+        _incident(conn, incident)
+        _correction(conn, incident, correction, digest="sha256:a")
+        _qualification(conn, qualification, correction, 1, "sha256:a")
+        _promotion(conn, promotion, correction, 1, "sha256:a", qualification)
+
+        for role in (authorizer, runtime):
+            conn.execute(sql.SQL("CREATE ROLE {} NOLOGIN").format(sql.Identifier(role)))
+            conn.execute(
+                sql.SQL("GRANT {} TO {}").format(
+                    sql.Identifier(role),
+                    sql.Identifier(current_user),
+                )
+            )
+
+        conn.execute("SELECT configure_fuckup_authorizer_role(%s::name)", (authorizer,))
+        conn.execute("SELECT configure_fuckup_runtime_role(%s::name)", (runtime,))
+
+        conn.execute(sql.SQL("SET ROLE {}").format(sql.Identifier(runtime)))
+        with pytest.raises(psycopg.errors.InsufficientPrivilege):
+            conn.execute(
+                """
+                SELECT * FROM create_versioned_authorized_binding(
+                    %s,%s,'memory-injector','1',
+                    '{"agent":"demo","task":"code"}'::jsonb,
+                    'sha256:selector',0,'FAIL_CLOSED',NULL
+                )
+                """,
+                (binding, promotion),
+            ).fetchall()
+
+        conn.execute("RESET ROLE")
+        conn.execute(sql.SQL("SET ROLE {}").format(sql.Identifier(authorizer)))
+        created = conn.execute(
+            """
+            SELECT id, adapter, adapter_version
+            FROM create_versioned_authorized_binding(
+                %s,%s,'memory-injector','1',
+                '{"agent":"demo","task":"code"}'::jsonb,
+                'sha256:selector',0,'FAIL_CLOSED',NULL
+            )
+            """,
+            (binding, promotion),
+        ).fetchone()
+        assert (str(created[0]), created[1], created[2]) == (
+            binding,
+            "memory-injector",
+            "1",
+        )
+
+        active = conn.execute(
+            """
+            SELECT id, promotion_id, adapter, adapter_version, correction_id, correction_revision
+            FROM active_injection_bindings
+            WHERE id = %s
+            """,
+            (binding,),
+        ).fetchone()
+        assert (
+            str(active[0]),
+            str(active[1]),
+            active[2],
+            active[3],
+            str(active[4]),
+            active[5],
+        ) == (
+            binding,
+            promotion,
+            "memory-injector",
+            "1",
+            correction,
+            1,
+        )
+    finally:
+        conn.execute("RESET ROLE")
+        for role in (runtime, authorizer):
+            conn.execute(sql.SQL("DROP OWNED BY {}").format(sql.Identifier(role)))
+        conn.execute(
+            sql.SQL("REVOKE {}, {} FROM {}").format(
+                sql.Identifier(runtime),
+                sql.Identifier(authorizer),
+                sql.Identifier(current_user),
+            )
+        )
+        for role in (runtime, authorizer):
+            conn.execute(sql.SQL("DROP ROLE IF EXISTS {}").format(sql.Identifier(role)))
+
+def test_durable_execution_store_survives_restart_and_persists_verified_outcomes(db, tmp_path):
+    from fuckup_protocol.bindings import selector_digest
+    from fuckup_protocol.execution import ExecutionCoordinator
+    from fuckup_protocol.operations import OperationState
+    from fuckup_protocol.plugins import PluginRegistry
+    from fuckup_protocol.postgres_execution import PostgresExecutionStore
+    from fuckup_protocol.reference_adapter import ReferenceFileInjector
+
+    conn, schema = db
+    privilege = conn.execute(
+        """
+        SELECT rolsuper OR rolcreaterole
+        FROM pg_catalog.pg_roles
+        WHERE rolname = current_user
+        """
+    ).fetchone()[0]
+    if not privilege:
+        pytest.skip("test database user needs SUPERUSER or CREATEROLE for durable runtime qualification")
+
+    runtime = f"fuckup_runtime_{uuid4().hex[:16]}"
+    current_user = conn.execute("SELECT current_user").fetchone()[0]
+    incident, correction, qualification, promotion, binding, *_ = _ids()
+    selector = {"agent": "demo"}
+    selector_hash = selector_digest(selector)
+
+    def connect_runtime():
+        runtime_conn = psycopg.connect(
+            DATABASE_URL,
+            autocommit=True,
+            cursor_factory=ClientCursor,
+        )
+        runtime_conn.execute(
+            sql.SQL("SET search_path TO {}, public").format(sql.Identifier(schema))
+        )
+        runtime_conn.execute(sql.SQL("SET ROLE {}").format(sql.Identifier(runtime)))
+        return runtime_conn
+
+    try:
+        _incident(conn, incident)
+        _correction(conn, incident, correction, digest="sha256:a")
+        _qualification(conn, qualification, correction, 1, "sha256:a")
+        _promotion(conn, promotion, correction, 1, "sha256:a", qualification)
+        conn.execute(
+            """
+            SELECT id
+            FROM create_versioned_authorized_binding(
+                %s,%s,'reference-file','1',
+                '{"agent":"demo"}'::jsonb,%s,0,'FAIL_CLOSED',NULL
+            )
+            """,
+            (binding, promotion, selector_hash),
+        ).fetchone()
+
+        conn.execute(sql.SQL("CREATE ROLE {} NOLOGIN").format(sql.Identifier(runtime)))
+        conn.execute("SELECT configure_fuckup_runtime_role(%s::name)", (runtime,))
+        conn.execute(
+            sql.SQL("GRANT {} TO {}").format(
+                sql.Identifier(runtime),
+                sql.Identifier(current_user),
+            )
+        )
+
+        adapter = ReferenceFileInjector(tmp_path)
+        registry = PluginRegistry()
+        adapter.register(registry)
+
+        store = PostgresExecutionStore(connect_runtime)
+        bindings = store.bindings_for_context({"agent": "demo", "task": "code"})
+        assert len(bindings) == 1
+        assert store.binding_is_current(bindings[0])
+
+        coordinator = ExecutionCoordinator(
+            registry=registry,
+            operations=store,
+            binding_currentness_validator=store.binding_is_current,
+            outcome_recorder=store.record_outcome,
+        )
+
+        normal = coordinator.execute(
+            bindings=bindings,
+            context={"agent": "demo", "task": "code"},
+            target="reference-file:normal",
+            effect_payload={"rule": "normal"},
+            idempotency_key="restart:normal",
+        )
+        assert normal.operation_state == OperationState.VERIFIED
+        assert store.outcome_for_operation(normal.operation.id) is not None
+
+        # PREPARED: crash after durable preparation but before ATTEMPTED.
+        prepared_payload = {
+            "binding_id": bindings[0].id,
+            "promotion_id": bindings[0].promotion_id,
+            "correction_id": bindings[0].correction_id,
+            "correction_revision": bindings[0].correction_revision,
+            "selector": dict(bindings[0].selector),
+            "selector_digest": bindings[0].selector_digest,
+            "activation_scope": dict(bindings[0].activation_scope),
+            "adapter": bindings[0].adapter,
+            "adapter_version": bindings[0].adapter_version,
+            "authority_ref": None,
+            "context": {"agent": "demo", "task": "code"},
+            "effect_payload": {"rule": "prepared"},
+        }
+        prepared, _ = store.prepare(
+            target="reference-file:prepared",
+            operation_kind="injector:reference-file@1",
+            effect_payload=prepared_payload,
+            idempotency_key="restart:prepared",
+        )
+        assert store.state(prepared.id) == OperationState.PREPARED
+
+        restarted_store = PostgresExecutionStore(connect_runtime)
+        restarted = ExecutionCoordinator(
+            registry=registry,
+            operations=restarted_store,
+            binding_currentness_validator=restarted_store.binding_is_current,
+            outcome_recorder=restarted_store.record_outcome,
+        )
+        recovered_prepared = restarted.execute(
+            bindings=restarted_store.bindings_for_context({"agent": "demo", "task": "code"}),
+            context={"agent": "demo", "task": "code"},
+            target="reference-file:prepared",
+            effect_payload={"rule": "prepared"},
+            idempotency_key="restart:prepared",
+        )
+        assert recovered_prepared.operation.id == prepared.id
+        assert recovered_prepared.operation_state == OperationState.VERIFIED
+
+        # ATTEMPTED: external write happened, process died before readback.
+        attempted_payload = {
+            **prepared_payload,
+            "effect_payload": {"rule": "attempted"},
+        }
+        attempted, _ = restarted_store.prepare(
+            target="reference-file:attempted",
+            operation_kind="injector:reference-file@1",
+            effect_payload=attempted_payload,
+            idempotency_key="restart:attempted",
+        )
+        restarted_store.attempt(attempted.id, evidence_ref=f"binding:{bindings[0].id}")
+        adapter.execute(
+            {
+                **attempted_payload,
+                "operation_id": attempted.id,
+                "effect_digest": attempted.effect_digest,
+                "target": attempted.target,
+            }
+        )
+        assert restarted_store.state(attempted.id) == OperationState.ATTEMPTED
+
+        after_attempt_crash = PostgresExecutionStore(connect_runtime)
+        attempted_result = ExecutionCoordinator(
+            registry=registry,
+            operations=after_attempt_crash,
+            binding_currentness_validator=after_attempt_crash.binding_is_current,
+            outcome_recorder=after_attempt_crash.record_outcome,
+        ).reconcile(attempted.id)
+        assert attempted_result.operation_state == OperationState.VERIFIED
+        assert after_attempt_crash.outcome_for_operation(attempted.id) is not None
+
+        # AMBIGUOUS: adapter wrote, response was lost, coordinator recorded ambiguity.
+        crash_registry = PluginRegistry()
+
+        def lost_response(request):
+            adapter.execute(request)
+            raise TimeoutError("simulated lost adapter response")
+
+        crash_registry.register_injector(adapter.spec, lost_response, adapter.readback)
+        crash_store = PostgresExecutionStore(connect_runtime)
+        crash_coordinator = ExecutionCoordinator(
+            registry=crash_registry,
+            operations=crash_store,
+            binding_currentness_validator=crash_store.binding_is_current,
+            outcome_recorder=crash_store.record_outcome,
+        )
+        with pytest.raises(TimeoutError, match="simulated lost adapter response"):
+            crash_coordinator.execute(
+                bindings=crash_store.bindings_for_context({"agent": "demo", "task": "code"}),
+                context={"agent": "demo", "task": "code"},
+                target="reference-file:ambiguous",
+                effect_payload={"rule": "ambiguous"},
+                idempotency_key="restart:ambiguous",
+            )
+
+        recoverable = PostgresExecutionStore(connect_runtime).recoverable_operations()
+        ambiguous = next(
+            item for item in recoverable
+            if item.intent.idempotency_key == "restart:ambiguous"
+        )
+        assert ambiguous.state == OperationState.AMBIGUOUS
+
+        final_store = PostgresExecutionStore(connect_runtime)
+        final_registry = PluginRegistry()
+        adapter.register(final_registry)
+        ambiguous_result = ExecutionCoordinator(
+            registry=final_registry,
+            operations=final_store,
+            binding_currentness_validator=final_store.binding_is_current,
+            outcome_recorder=final_store.record_outcome,
+        ).reconcile(ambiguous.intent.id)
+        assert ambiguous_result.operation_state == OperationState.VERIFIED
+        assert final_store.outcome_for_operation(ambiguous.intent.id) is not None
+        assert final_store.verified_outcome_gaps() == ()
+
+        with connect_runtime() as runtime_conn:
+            with pytest.raises(psycopg.errors.InsufficientPrivilege):
+                runtime_conn.execute(
+                    """
+                    INSERT INTO outcome_observations(
+                        id,operation_id,correction_id,correction_revision,
+                        promotion_id,binding_id,scope_digest,effect_digest,
+                        verification_evidence_ref,failure_occurred,
+                        correction_triggered,prevented,regression
+                    )
+                    VALUES (
+                        %s,%s,%s,1,%s,%s,%s,'sha256:fake',
+                        'fake',false,true,false,false
+                    )
+                    """,
+                    (
+                        str(uuid4()),
+                        normal.operation.id,
+                        correction,
+                        promotion,
+                        binding,
+                        selector_hash,
+                    ),
+                )
+    finally:
+        conn.execute("RESET ROLE")
+        conn.execute(sql.SQL("DROP OWNED BY {}").format(sql.Identifier(runtime)))
+        conn.execute(
+            sql.SQL("REVOKE {} FROM {}").format(
+                sql.Identifier(runtime),
+                sql.Identifier(current_user),
+            )
+        )
+        conn.execute(sql.SQL("DROP ROLE IF EXISTS {}").format(sql.Identifier(runtime)))
