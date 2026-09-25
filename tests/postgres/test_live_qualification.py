@@ -1136,7 +1136,11 @@ def test_versioned_binding_is_authorizer_only_and_persists_exact_adapter_version
             """,
             (binding, promotion),
         ).fetchone()
-        assert created == (binding, "memory-injector", "1")
+        assert (str(created[0]), created[1], created[2]) == (
+            binding,
+            "memory-injector",
+            "1",
+        )
 
         active = conn.execute(
             """
@@ -1146,7 +1150,14 @@ def test_versioned_binding_is_authorizer_only_and_persists_exact_adapter_version
             """,
             (binding,),
         ).fetchone()
-        assert active == (
+        assert (
+            str(active[0]),
+            str(active[1]),
+            active[2],
+            active[3],
+            str(active[4]),
+            active[5],
+        ) == (
             binding,
             promotion,
             "memory-injector",
