@@ -45,3 +45,13 @@ def test_durable_execution_functions_pin_search_path_and_revoke_public():
     assert "SECURITY DEFINER" in sql
     assert "SET search_path TO %I, pg_catalog, pg_temp" in sql
     assert "REVOKE ALL ON FUNCTION" in sql
+
+
+def test_verified_outcome_checks_binding_promotion_correction_lineage():
+    sql = _sql()
+    assert "outcome binding lineage does not match operation" in sql
+    assert "binding.promotion_id = p_promotion_id" in sql
+    assert "promotion.correction_id = p_correction_id" in sql
+    assert "promotion.correction_revision = p_correction_revision" in sql
+    assert "binding.selector_digest = p_scope_digest" in sql
+    assert "op.operation_kind = 'injector:' || binding.adapter || '@' || binding.adapter_version" in sql

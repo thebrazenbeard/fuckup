@@ -76,6 +76,24 @@ BEGIN
         RAISE EXCEPTION 'outcome verification evidence does not match VERIFIED event';
     END IF;
 
+    IF NOT EXISTS (
+        SELECT 1
+        FROM injection_bindings binding
+        JOIN promotions promotion
+          ON promotion.id = binding.promotion_id
+        WHERE binding.id = p_binding_id
+          AND binding.promotion_id = p_promotion_id
+          AND promotion.correction_id = p_correction_id
+          AND promotion.correction_revision = p_correction_revision
+          AND binding.selector_digest = p_scope_digest
+          AND binding.adapter_version IS NOT NULL
+          AND op.effect_payload->>'adapter' = binding.adapter
+          AND op.effect_payload->>'adapter_version' = binding.adapter_version
+          AND op.operation_kind = 'injector:' || binding.adapter || '@' || binding.adapter_version
+    ) THEN
+        RAISE EXCEPTION 'outcome binding lineage does not match operation';
+    END IF;
+
     SELECT * INTO existing
       FROM outcome_observations
      WHERE operation_id = p_operation_id
