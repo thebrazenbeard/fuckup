@@ -66,6 +66,7 @@ class StaleBindingError(PermissionError):
 
 ProtectedEffectAuthorizer = Callable[[InjectionBinding, HandlerSpec, str, Mapping[str, Any]], str | None]
 BindingCurrentnessValidator = Callable[[InjectionBinding], bool]
+OutcomeRecorder = Callable[[OutcomeObservation], None]
 
 
 def _plain(value: Any) -> Any:
@@ -98,11 +99,13 @@ class ExecutionCoordinator:
         operations: OperationJournal,
         binding_currentness_validator: BindingCurrentnessValidator,
         protected_effect_authorizer: ProtectedEffectAuthorizer | None = None,
+        outcome_recorder: OutcomeRecorder | None = None,
     ) -> None:
         self._registry = registry
         self._operations = operations
         self._binding_currentness_validator = binding_currentness_validator
         self._protected_effect_authorizer = protected_effect_authorizer
+        self._outcome_recorder = outcome_recorder
 
     def execute(
         self,
@@ -227,6 +230,51 @@ class ExecutionCoordinator:
             readback=readback_result,
         )
 
+    def recover_outcome(self, operation_id: str) -> ExecutionResult:
+        if self._operations.state(operation_id) != OperationState.VERIFIED:
+            raise ValueError("outcome recovery requires a VERIFIED operation")
+        operation = self._operations.intent(operation_id)
+        binding = self._binding_from_operation(operation)
+        self._require_executable_binding(binding)
+        spec, _handler, readback = self._registry.resolve_injector(
+            binding.adapter,
+            binding.adapter_version,
+        )
+        readback_result = readback(self._invocation(operation), None)
+        if not isinstance(readback_result, InjectorReadback):
+            raise TypeError("injector readback must return InjectorReadback")
+        if readback_result.disposition != ReadbackDisposition.VERIFIED:
+            raise ValueError("verified operation no longer has VERIFIED adapter readback")
+
+        verified_events = [
+            event
+            for event in self._operations.events(operation_id)
+            if event.state == OperationState.VERIFIED
+        ]
+        if not verified_events:
+            raise ValueError("VERIFIED operation is missing verification event evidence")
+        verification_event = verified_events[-1]
+        observed_digest = _payload_digest(readback_result.observed or {})
+        if verification_event.readback_digest != observed_digest:
+            raise ValueError("verified target state changed since original verification")
+
+        observation = self._build_observation(
+            operation=operation,
+            binding=binding,
+            readback=readback_result,
+            verification_evidence_ref=verification_event.evidence_ref,
+        )
+        self._record_outcome(observation)
+        return ExecutionResult(
+            binding=binding,
+            handler=spec,
+            operation=operation,
+            operation_state=OperationState.VERIFIED,
+            handler_result=None,
+            readback=readback_result,
+            observation=observation,
+        )
+
     def _authorize_side_effect(
         self,
         *,
@@ -342,24 +390,13 @@ class ExecutionCoordinator:
             evidence_ref=readback.evidence_ref,
             readback_digest=observed_digest,
         )
-        subject = EffectivenessSubject(
-            correction_id=binding.correction_id,
-            correction_revision=binding.correction_revision,
-            scope_digest=binding.selector_digest,
-            promotion_id=binding.promotion_id,
-            binding_id=binding.id,
-        )
-        observation = OutcomeObservation(
-            phase=ObservationPhase.ACTIVE,
-            failure_occurred=readback.failure_occurred,
-            correction_triggered=True,
-            prevented=readback.prevented,
-            regression=readback.regression,
-            subject=subject,
-            operation_id=operation.id,
-            effect_digest=operation.effect_digest,
+        observation = self._build_observation(
+            operation=operation,
+            binding=binding,
+            readback=readback,
             verification_evidence_ref=readback.evidence_ref,
         )
+        self._record_outcome(observation)
         return ExecutionResult(
             binding=binding,
             handler=spec,
@@ -369,6 +406,40 @@ class ExecutionCoordinator:
             readback=readback,
             observation=observation,
         )
+
+
+
+    def _build_observation(
+        self,
+        *,
+        operation: OperationIntent,
+        binding: InjectionBinding,
+        readback: InjectorReadback,
+        verification_evidence_ref: str | None,
+    ) -> OutcomeObservation:
+        subject = EffectivenessSubject(
+            correction_id=binding.correction_id,
+            correction_revision=binding.correction_revision,
+            scope_digest=binding.selector_digest,
+            promotion_id=binding.promotion_id,
+            binding_id=binding.id,
+        )
+        return OutcomeObservation(
+            phase=ObservationPhase.ACTIVE,
+            failure_occurred=readback.failure_occurred,
+            correction_triggered=True,
+            prevented=readback.prevented,
+            regression=readback.regression,
+            subject=subject,
+            operation_id=operation.id,
+            effect_digest=operation.effect_digest,
+            verification_evidence_ref=verification_evidence_ref,
+        )
+
+    def _record_outcome(self, observation: OutcomeObservation) -> None:
+        if self._outcome_recorder is not None:
+            self._outcome_recorder(observation)
+
 
     @staticmethod
     def _binding_from_operation(operation: OperationIntent) -> InjectionBinding:

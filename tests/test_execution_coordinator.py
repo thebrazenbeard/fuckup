@@ -437,3 +437,57 @@ def test_protected_effect_boolean_admission_without_evidence_reference_is_reject
             effect_payload={"rule": "x"},
             idempotency_key="inject:protected-no-evidence",
         )
+
+def test_verified_outcome_is_sent_to_durable_recorder():
+    recorded = []
+    coordinator = ExecutionCoordinator(
+        registry=_registry(),
+        operations=OperationJournal(id_factory=lambda: "op-1"),
+        binding_currentness_validator=_current,
+        outcome_recorder=recorded.append,
+    )
+
+    result = coordinator.execute(
+        bindings=(_binding(),),
+        context={"agent": "demo", "task": "code"},
+        target="memory:vera",
+        effect_payload={"rule": "x"},
+        idempotency_key="inject:record-outcome",
+    )
+
+    assert result.operation_state == OperationState.VERIFIED
+    assert recorded == [result.observation]
+
+
+def test_verified_outcome_can_be_recovered_after_recorder_failure():
+    journal = OperationJournal(id_factory=lambda: "op-1")
+    calls = {"record": 0}
+    recovered = []
+
+    def flaky_recorder(observation):
+        calls["record"] += 1
+        if calls["record"] == 1:
+            raise RuntimeError("durable outcome store unavailable")
+        recovered.append(observation)
+
+    coordinator = ExecutionCoordinator(
+        registry=_registry(),
+        operations=journal,
+        binding_currentness_validator=_current,
+        outcome_recorder=flaky_recorder,
+    )
+
+    with pytest.raises(RuntimeError, match="durable outcome store unavailable"):
+        coordinator.execute(
+            bindings=(_binding(),),
+            context={"agent": "demo", "task": "code"},
+            target="memory:vera",
+            effect_payload={"rule": "x"},
+            idempotency_key="inject:recover-outcome",
+        )
+
+    assert journal.state("op-1") == OperationState.VERIFIED
+
+    result = coordinator.recover_outcome("op-1")
+    assert result.operation_state == OperationState.VERIFIED
+    assert recovered == [result.observation]

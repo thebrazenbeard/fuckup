@@ -171,3 +171,11 @@ Runtime execution currentness and reconciliation are deliberately different:
 - a prior ATTEMPTED/AMBIGUOUS effect may still be read back and reconciled after later revocation, because current authority cannot erase uncertainty about an effect already attempted.
 
 This migration does not install an adapter, authorize a protected effect, or prove a target consumed an effect.
+
+## Durable execution evidence
+
+`migrations/0006_durable_execution_repository.sql` adds append-only `outcome_observations` keyed uniquely by effect operation. The guarded recorder accepts an observation only when the latest operation event is VERIFIED and the supplied correction revision, promotion, binding, selector digest, effect digest, and verification-evidence reference exactly match durable operation provenance.
+
+The runtime role receives SELECT plus EXECUTE on the guarded recorder, but no direct INSERT/UPDATE/DELETE/TRUNCATE authority on outcome observations. Repeated recording for the same operation is idempotent only when every outcome field agrees; conflicting reuse is rejected.
+
+`PostgresExecutionStore` uses those guarded functions as the durable journal/outcome boundary and exposes recovery inventories for PREPARED/ATTEMPTED/AMBIGUOUS operations and VERIFIED operations missing their outcome row.

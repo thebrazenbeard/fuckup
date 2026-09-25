@@ -27,6 +27,8 @@ The current review branch expands the protocol into an executable corrective-lea
 - exact-subject recurrence/effectiveness attribution;
 - governed injector execution from exact active binding through adapter-specific readback and bound outcome observation;
 - exact adapter-version pinning for executable bindings, with legacy unversioned bindings rejected by the execution coordinator;
+- `PostgresExecutionStore` for durable bindings, operation recovery, verified-outcome persistence, and restart gap detection;
+- a reversible `ReferenceFileInjector` that performs real filesystem write/readback/rollback qualification without path traversal;
 - PostgreSQL worker retry/DLQ and transactional outbox mechanics;
 - trusted-schema runtime/authorizer role separation and guarded promotion authority;
 - hostile tests for stale evidence, fabricated authority, privilege escape, collisions, and illegal lifecycle transitions.
@@ -42,6 +44,8 @@ Source presence and passing tests do not establish installation, deployment, run
 - `schema/` — machine-readable record/event contracts.
 - `templates/RETROSPECTIVE.md` — fillable six-stage review.
 - `docs/architecture/` — runtime, trust, event/provenance, and database boundaries.
+- `docs/operations/RECOVERY_RUNBOOK.md` — restart/reconciliation procedure for PREPARED, ATTEMPTED, AMBIGUOUS, and VERIFIED-gap states.
+- `docs/LAUNCH_READINESS.md` — V0.1 release scope and launch gates.
 - `docs/research/` — mechanism and portfolio research.
 - `docs/plans/` and `docs/implementation/` — implementation state and next frontier.
 

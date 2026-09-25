@@ -75,6 +75,8 @@ from .plugins import (
     UnknownHandlerError,
 )
 from .policy import PromotionContext, PromotionPolicy, StrictPromotionPolicy
+from .postgres_execution import DurableOperationStatus, DurableOutcomeRecord, PostgresExecutionStore
+from .reference_adapter import ReferenceFileInjector
 from .provenance import ProvenanceKind, ProvenanceRef
 from .state import CorrectionState, InvalidTransition, can_transition, require_transition
 from .validation import TestKind, ValidationReport
@@ -87,6 +89,8 @@ __all__ = [
     "CorrectionRevision",
     "CorrectionState",
     "DuplicateHandlerError",
+    "DurableOperationStatus",
+    "DurableOutcomeRecord",
     "EffectivenessState",
     "EffectivenessSubject",
     "EffectivenessSummary",
@@ -119,6 +123,7 @@ __all__ = [
     "OperationState",
     "OutcomeObservation",
     "PluginRegistry",
+    "PostgresExecutionStore",
     "PolicyDecision",
     "PromotionAuthorization",
     "PromotionContext",
@@ -130,6 +135,7 @@ __all__ = [
     "ProvenanceRef",
     "QualificationResult",
     "ReadbackDisposition",
+    "ReferenceFileInjector",
     "SerializationCondition",
     "SideEffectClass",
     "StaleBindingError",
