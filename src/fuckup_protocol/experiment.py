@@ -61,7 +61,9 @@ class ExperimentOutcome:
     @property
     def durable_correction_success(self) -> bool:
         return (
-            self.correction_applied
+            not self.initial_correct
+            and self.correction_applied
+            and self.schema_valid
             and self.exact_recurrence_passed
             and self.near_transfer_passed
             and self.retain_passed
