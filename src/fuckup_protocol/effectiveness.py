@@ -107,6 +107,15 @@ def summarize_effectiveness(
     if minimum_active_exposures < 1:
         raise ValueError("minimum_active_exposures must be >= 1")
 
+    # One durable operation can generate multiple readbacks or replays, but
+    # these are not independent exposure trials. Reject duplicate identities
+    # rather than inflating an apparent observed improvement.
+    operation_ids = [item.operation_id for item in observations if item.operation_id is not None]
+    if any(type(operation_id) is not str or not operation_id.strip() for operation_id in operation_ids):
+        raise ValueError("effectiveness operation_id must be a nonempty string")
+    if len(operation_ids) != len(set(operation_ids)):
+        raise ValueError("duplicate effectiveness operation_id")
+
     subject = _validate_subjects(observations)
     baseline = [item for item in observations if item.phase == ObservationPhase.BASELINE]
     active = [item for item in observations if item.phase == ObservationPhase.ACTIVE]
