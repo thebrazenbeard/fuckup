@@ -41,3 +41,25 @@ def test_retain_regression_prevents_success():
         introduced_error=False,
     )
     assert not outcome.durable_correction_success
+
+
+def test_invalid_postcorrection_schema_disqualifies_durable_correction():
+    outcome = ExperimentOutcome(
+        condition_id="c001", model_id="model-a", task_id="task-2",
+        initial_correct=False, correction_applied=True,
+        exact_recurrence_passed=True, near_transfer_passed=True,
+        far_transfer_passed=True, retain_passed=True,
+        anti_trigger_passed=True, schema_valid=False, introduced_error=False,
+    )
+    assert not outcome.durable_correction_success
+
+
+def test_previously_correct_answer_is_not_feedback_caused_correction():
+    outcome = ExperimentOutcome(
+        condition_id="c001", model_id="model-a", task_id="task-3",
+        initial_correct=True, correction_applied=True,
+        exact_recurrence_passed=True, near_transfer_passed=True,
+        far_transfer_passed=True, retain_passed=True,
+        anti_trigger_passed=True, schema_valid=True, introduced_error=False,
+    )
+    assert not outcome.durable_correction_success
