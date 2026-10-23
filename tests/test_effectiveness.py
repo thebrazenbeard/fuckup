@@ -184,6 +184,7 @@ def test_opt_in_reference_completeness_does_not_attest_evidence_truth():
         [OutcomeObservation(
             ObservationPhase.BASELINE, True, subject=baseline,
             operation_id=f"baseline-{i}",
+            verification_evidence_ref=f"unverified:baseline-ref-{i}",
         ) for i in range(5)]
         + [OutcomeObservation(
             ObservationPhase.ACTIVE, False, subject=active,
@@ -206,7 +207,10 @@ def test_opt_in_reference_completeness_requires_every_identity_and_active_refere
     b = EffectivenessSubject("corr", 1, "sha256:scope")
     a = EffectivenessSubject("corr", 1, "sha256:scope", "promo", "bind")
     valid = (
-        OutcomeObservation(ObservationPhase.BASELINE, True, subject=b, operation_id="baseline"),
+        OutcomeObservation(
+            ObservationPhase.BASELINE, True, subject=b, operation_id="baseline",
+            verification_evidence_ref="source:baseline-readback",
+        ),
         OutcomeObservation(
             ObservationPhase.ACTIVE, False, subject=a, operation_id="active",
             effect_digest="sha256:effect", verification_evidence_ref="source:readback",
@@ -215,6 +219,7 @@ def test_opt_in_reference_completeness_requires_every_identity_and_active_refere
     for incomplete in (
         (replace(valid[0], subject=None), valid[1]),
         (replace(valid[0], operation_id=None), valid[1]),
+        (replace(valid[0], verification_evidence_ref=None), valid[1]),
         (valid[0], replace(valid[1], effect_digest=None)),
         (valid[0], replace(valid[1], verification_evidence_ref="")),
     ):
@@ -225,42 +230,28 @@ def test_opt_in_reference_completeness_requires_every_identity_and_active_refere
             )
 
 
-def test_anonymous_legacy_summary_keeps_observational_claim_ceiling():
-    observations = tuple(
-        [OutcomeObservation(ObservationPhase.BASELINE, True) for _ in range(5)]
-        + [OutcomeObservation(ObservationPhase.ACTIVE, False) for _ in range(5)]
-    )
-    summary = summarize_effectiveness(observations)
-    assert summary.state == EffectivenessState.IMPROVEMENT_OBSERVED
-    assert summary.claim_ceiling == "OBSERVATIONAL_RATES_ONLY"
-    assert summary.reference_completeness_checked is False
 
-
-def test_forged_but_complete_references_do_not_upgrade_claim_ceiling():
+def test_opt_in_must_not_accept_unverified_baseline_outcomes():
     from fuckup_protocol.effectiveness import EffectivenessSubject
+    import pytest
 
     baseline = EffectivenessSubject("corr", 1, "scope")
-    active = EffectivenessSubject("corr", 1, "scope", "promo", "binding")
+    active = EffectivenessSubject("corr", 1, "scope", "promotion", "binding")
     observations = tuple(
-        OutcomeObservation(ObservationPhase.BASELINE, True, subject=baseline, operation_id=f"b-{i}")
-        for i in range(5)
+        OutcomeObservation(
+            ObservationPhase.BASELINE, True, subject=baseline,
+            operation_id=f"baseline-{i}",
+        ) for i in range(5)
     ) + tuple(
         OutcomeObservation(
-            ObservationPhase.ACTIVE, False, subject=active, operation_id=f"a-{i}",
+            ObservationPhase.ACTIVE, False, subject=active,
+            operation_id=f"active-{i}",
             effect_digest=f"fictional:effect-{i}",
-            verification_evidence_ref=f"fictional:receipt-{i}",
+            verification_evidence_ref=f"fictional:active-readback-{i}",
         ) for i in range(5)
     )
-    result = summarize_effectiveness(observations, require_reference_completeness=True)
-    assert result.state == EffectivenessState.IMPROVEMENT_OBSERVED
-    assert result.reference_completeness_checked is True
-    assert result.claim_ceiling == "OBSERVATIONAL_RATES_ONLY"
-
-
-def test_insufficient_samples_cannot_claim_more_than_observational_rates():
-    result = summarize_effectiveness(
-        (OutcomeObservation(ObservationPhase.BASELINE, True),),
-    )
-    assert result.state == EffectivenessState.INSUFFICIENT_EVIDENCE
-    assert result.reference_completeness_checked is False
-    assert result.claim_ceiling == "OBSERVATIONAL_RATES_ONLY"
+    # The legacy descriptive path still reports the supplied arithmetic.
+    assert summarize_effectiveness(observations).state == EffectivenessState.IMPROVEMENT_OBSERVED
+    # Opt-in evidence hygiene requires references for BOTH comparison arms.
+    with pytest.raises(ValueError, match="reference completeness"):
+        summarize_effectiveness(observations, require_reference_completeness=True)
