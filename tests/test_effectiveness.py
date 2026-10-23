@@ -158,3 +158,100 @@ def test_reused_operation_id_between_baseline_and_active_is_not_distinct():
     )
     with pytest.raises(ValueError, match="duplicate effectiveness operation_id"):
         summarize_effectiveness(observations, minimum_active_exposures=1)
+
+
+def test_opt_in_reference_completeness_rejects_anonymous_improvement():
+    from fuckup_protocol.effectiveness import EffectivenessSubject
+    import pytest
+
+    subject = EffectivenessSubject("correction", 1, "sha256:scope")
+    active = EffectivenessSubject("correction", 1, "sha256:scope", "promotion", "binding")
+    observations = tuple(
+        [OutcomeObservation(ObservationPhase.BASELINE, True, subject=subject) for _ in range(5)]
+        + [OutcomeObservation(ObservationPhase.ACTIVE, False, subject=active) for _ in range(5)]
+    )
+    assert summarize_effectiveness(observations).state == EffectivenessState.IMPROVEMENT_OBSERVED
+    with pytest.raises(ValueError, match="reference completeness"):
+        summarize_effectiveness(observations, require_reference_completeness=True)
+
+
+def test_opt_in_reference_completeness_does_not_attest_evidence_truth():
+    from fuckup_protocol.effectiveness import EffectivenessSubject
+
+    baseline = EffectivenessSubject("correction", 1, "sha256:scope")
+    active = EffectivenessSubject("correction", 1, "sha256:scope", "promotion", "binding")
+    observations = tuple(
+        [OutcomeObservation(
+            ObservationPhase.BASELINE, True, subject=baseline,
+            operation_id=f"baseline-{i}",
+            verification_evidence_ref=f"unverified:baseline-ref-{i}",
+        ) for i in range(5)]
+        + [OutcomeObservation(
+            ObservationPhase.ACTIVE, False, subject=active,
+            operation_id=f"active-{i}",
+            effect_digest=f"sha256:caller-assertion-{i}",
+            verification_evidence_ref=f"unverified:caller-ref-{i}",
+        ) for i in range(5)]
+    )
+    # The inputs *claim* references; their existence or truth is NOT checked.
+    result = summarize_effectiveness(observations, require_reference_completeness=True)
+    assert result.state == EffectivenessState.IMPROVEMENT_OBSERVED
+    assert result.active_exposures == 5
+
+
+def test_opt_in_reference_completeness_requires_every_identity_and_active_reference():
+    from dataclasses import replace
+    from fuckup_protocol.effectiveness import EffectivenessSubject
+    import pytest
+
+    b = EffectivenessSubject("corr", 1, "sha256:scope")
+    a = EffectivenessSubject("corr", 1, "sha256:scope", "promo", "bind")
+    valid = (
+        OutcomeObservation(
+            ObservationPhase.BASELINE, True, subject=b, operation_id="baseline",
+            verification_evidence_ref="source:baseline-readback",
+        ),
+        OutcomeObservation(
+            ObservationPhase.ACTIVE, False, subject=a, operation_id="active",
+            effect_digest="sha256:effect", verification_evidence_ref="source:readback",
+        ),
+    )
+    for incomplete in (
+        (replace(valid[0], subject=None), valid[1]),
+        (replace(valid[0], operation_id=None), valid[1]),
+        (replace(valid[0], verification_evidence_ref=None), valid[1]),
+        (valid[0], replace(valid[1], effect_digest=None)),
+        (valid[0], replace(valid[1], verification_evidence_ref="")),
+    ):
+        with pytest.raises(ValueError, match="reference completeness"):
+            summarize_effectiveness(
+                incomplete, minimum_active_exposures=1,
+                require_reference_completeness=True,
+            )
+
+
+
+def test_opt_in_must_not_accept_unverified_baseline_outcomes():
+    from fuckup_protocol.effectiveness import EffectivenessSubject
+    import pytest
+
+    baseline = EffectivenessSubject("corr", 1, "scope")
+    active = EffectivenessSubject("corr", 1, "scope", "promotion", "binding")
+    observations = tuple(
+        OutcomeObservation(
+            ObservationPhase.BASELINE, True, subject=baseline,
+            operation_id=f"baseline-{i}",
+        ) for i in range(5)
+    ) + tuple(
+        OutcomeObservation(
+            ObservationPhase.ACTIVE, False, subject=active,
+            operation_id=f"active-{i}",
+            effect_digest=f"fictional:effect-{i}",
+            verification_evidence_ref=f"fictional:active-readback-{i}",
+        ) for i in range(5)
+    )
+    # The legacy descriptive path still reports the supplied arithmetic.
+    assert summarize_effectiveness(observations).state == EffectivenessState.IMPROVEMENT_OBSERVED
+    # Opt-in evidence hygiene requires references for BOTH comparison arms.
+    with pytest.raises(ValueError, match="reference completeness"):
+        summarize_effectiveness(observations, require_reference_completeness=True)
