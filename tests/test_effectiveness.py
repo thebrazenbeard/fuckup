@@ -223,3 +223,44 @@ def test_opt_in_reference_completeness_requires_every_identity_and_active_refere
                 incomplete, minimum_active_exposures=1,
                 require_reference_completeness=True,
             )
+
+
+def test_anonymous_legacy_summary_keeps_observational_claim_ceiling():
+    observations = tuple(
+        [OutcomeObservation(ObservationPhase.BASELINE, True) for _ in range(5)]
+        + [OutcomeObservation(ObservationPhase.ACTIVE, False) for _ in range(5)]
+    )
+    summary = summarize_effectiveness(observations)
+    assert summary.state == EffectivenessState.IMPROVEMENT_OBSERVED
+    assert summary.claim_ceiling == "OBSERVATIONAL_RATES_ONLY"
+    assert summary.reference_completeness_checked is False
+
+
+def test_forged_but_complete_references_do_not_upgrade_claim_ceiling():
+    from fuckup_protocol.effectiveness import EffectivenessSubject
+
+    baseline = EffectivenessSubject("corr", 1, "scope")
+    active = EffectivenessSubject("corr", 1, "scope", "promo", "binding")
+    observations = tuple(
+        OutcomeObservation(ObservationPhase.BASELINE, True, subject=baseline, operation_id=f"b-{i}")
+        for i in range(5)
+    ) + tuple(
+        OutcomeObservation(
+            ObservationPhase.ACTIVE, False, subject=active, operation_id=f"a-{i}",
+            effect_digest=f"fictional:effect-{i}",
+            verification_evidence_ref=f"fictional:receipt-{i}",
+        ) for i in range(5)
+    )
+    result = summarize_effectiveness(observations, require_reference_completeness=True)
+    assert result.state == EffectivenessState.IMPROVEMENT_OBSERVED
+    assert result.reference_completeness_checked is True
+    assert result.claim_ceiling == "OBSERVATIONAL_RATES_ONLY"
+
+
+def test_insufficient_samples_cannot_claim_more_than_observational_rates():
+    result = summarize_effectiveness(
+        (OutcomeObservation(ObservationPhase.BASELINE, True),),
+    )
+    assert result.state == EffectivenessState.INSUFFICIENT_EVIDENCE
+    assert result.reference_completeness_checked is False
+    assert result.claim_ceiling == "OBSERVATIONAL_RATES_ONLY"
