@@ -95,3 +95,66 @@ def test_effectiveness_summary_retains_exact_active_subject_identity():
     summary = summarize_effectiveness(observations, minimum_active_exposures=1)
 
     assert summary.subject == active
+
+def test_replayed_operation_cannot_multiply_independent_effectiveness_exposures():
+    from fuckup_protocol.effectiveness import EffectivenessSubject
+    import pytest
+
+    baseline = EffectivenessSubject("corr-1", 1, "sha256:scope")
+    active = EffectivenessSubject("corr-1", 1, "sha256:scope", "promo-1", "bind-1")
+    observations = tuple(
+        [OutcomeObservation(ObservationPhase.BASELINE, True, subject=baseline) for _ in range(5)]
+        + [
+            OutcomeObservation(
+                ObservationPhase.ACTIVE, False, subject=active,
+                operation_id="replayed-operation-1",
+                effect_digest="sha256:same-effect",
+                verification_evidence_ref="adapter:same-readback",
+            )
+            for _ in range(5)
+        ]
+    )
+    with pytest.raises(ValueError, match="duplicate effectiveness operation_id"):
+        summarize_effectiveness(observations)
+
+
+def test_distinct_verified_operations_still_report_observational_improvement():
+    from fuckup_protocol.effectiveness import EffectivenessSubject
+
+    baseline = EffectivenessSubject("corr-1", 1, "sha256:scope")
+    active = EffectivenessSubject("corr-1", 1, "sha256:scope", "promo-1", "bind-1")
+    observations = tuple(
+        [OutcomeObservation(ObservationPhase.BASELINE, True, subject=baseline) for _ in range(5)]
+        + [
+            OutcomeObservation(
+                ObservationPhase.ACTIVE, False, subject=active,
+                operation_id=f"distinct-operation-{i}",
+                effect_digest=f"sha256:effect-{i}",
+                verification_evidence_ref=f"adapter:readback-{i}",
+            )
+            for i in range(5)
+        ]
+    )
+    outcome = summarize_effectiveness(observations)
+    assert outcome.state == EffectivenessState.IMPROVEMENT_OBSERVED
+    assert outcome.active_exposures == 5
+
+
+def test_reused_operation_id_between_baseline_and_active_is_not_distinct():
+    from fuckup_protocol.effectiveness import EffectivenessSubject
+    import pytest
+
+    baseline = EffectivenessSubject("corr-1", 1, "sha256:scope")
+    active = EffectivenessSubject("corr-1", 1, "sha256:scope", "promo-1", "bind-1")
+    observations = (
+        OutcomeObservation(
+            ObservationPhase.BASELINE, True, subject=baseline,
+            operation_id="same-operation",
+        ),
+        OutcomeObservation(
+            ObservationPhase.ACTIVE, False, subject=active,
+            operation_id="same-operation",
+        ),
+    )
+    with pytest.raises(ValueError, match="duplicate effectiveness operation_id"):
+        summarize_effectiveness(observations, minimum_active_exposures=1)
