@@ -107,8 +107,8 @@ def summarize_effectiveness(
 ) -> EffectivenessSummary:
     """Summarize observed rates, not the causal effect of a learned correction.
 
-    With require_reference_completeness=True, reject missing source identity
-    or active effect references. Their presence is NOT independent verification
+    With require_reference_completeness=True, require operation identity
+    and readback references for both arms plus active effect references. Their presence is NOT independent verification
     of authenticity, model execution, or feedback-caused learning.
     """
     if minimum_active_exposures < 1:
@@ -118,11 +118,15 @@ def summarize_effectiveness(
         for item in observations:
             if item.subject is None or not isinstance(item.operation_id, str) or not item.operation_id.strip():
                 raise ValueError("reference completeness requires subject and operation_id")
+            # Both control and intervention arms determine the observed
+            # failure-rate comparison. A baseline with no readback can
+            # manufacture arbitrary "before" failures just as easily.
+            if (not isinstance(item.verification_evidence_ref, str)
+                    or not item.verification_evidence_ref.strip()):
+                raise ValueError("reference completeness requires every observation readback")
             if item.phase == ObservationPhase.ACTIVE:
-                if (not isinstance(item.effect_digest, str) or not item.effect_digest.strip()
-                        or not isinstance(item.verification_evidence_ref, str)
-                        or not item.verification_evidence_ref.strip()):
-                    raise ValueError("reference completeness requires active effect and readback references")
+                if not isinstance(item.effect_digest, str) or not item.effect_digest.strip():
+                    raise ValueError("reference completeness requires active effect reference")
 
     # One durable operation can generate multiple readbacks or replays, but
     # these are not independent exposure trials. Reject duplicate identities
