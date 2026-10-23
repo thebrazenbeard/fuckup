@@ -103,9 +103,26 @@ def summarize_effectiveness(
     observations: tuple[OutcomeObservation, ...],
     *,
     minimum_active_exposures: int = 5,
+    require_reference_completeness: bool = False,
 ) -> EffectivenessSummary:
+    """Summarize observed rates, not the causal effect of a learned correction.
+
+    With require_reference_completeness=True, reject missing source identity
+    or active effect references. Their presence is NOT independent verification
+    of authenticity, model execution, or feedback-caused learning.
+    """
     if minimum_active_exposures < 1:
         raise ValueError("minimum_active_exposures must be >= 1")
+
+    if require_reference_completeness:
+        for item in observations:
+            if item.subject is None or not isinstance(item.operation_id, str) or not item.operation_id.strip():
+                raise ValueError("reference completeness requires subject and operation_id")
+            if item.phase == ObservationPhase.ACTIVE:
+                if (not isinstance(item.effect_digest, str) or not item.effect_digest.strip()
+                        or not isinstance(item.verification_evidence_ref, str)
+                        or not item.verification_evidence_ref.strip()):
+                    raise ValueError("reference completeness requires active effect and readback references")
 
     # One durable operation can generate multiple readbacks or replays, but
     # these are not independent exposure trials. Reject duplicate identities
