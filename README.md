@@ -37,6 +37,19 @@ V0.1 provides an executable corrective-learning core with:
 
 Source presence and passing tests do not establish installation, deployment, runtime consumption, or effectiveness in a production system.
 
+### Cross-repository event boundary
+
+`FuckupEvent.to_cloudevent()` emits JSON-safe CloudEvents 1.0 telemetry in the
+`org.fuckup.*` namespace. Event creation rejects malformed names, naive
+timestamps, non-JSON data, non-string nested keys, and incompatible provenance
+types before such assertions are serialized. This is a **producer-side
+contract**, not an inbound trust validator, network publisher, message-bus
+adapter, or evidence that another process received an event. Consumers must
+validate inbound data independently. Provenance references and model-produced
+claims are **assertions, not promotion authorization or proof of an effect**.
+No Bus route, node registration, credentials, or protected effect is created
+by this library API.
+
 ## Install and reference path
 
 V0.1 is qualified on Python 3.12+.
