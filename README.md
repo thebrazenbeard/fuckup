@@ -50,6 +50,25 @@ claims are **assertions, not promotion authorization or proof of an effect**.
 No Bus route, node registration, credentials, or protected effect is created
 by this library API.
 
+### DriftGuard CI-result consumption
+
+`consume_driftguard_ci_result()` is a pure, read-only consumer for the exact
+`DRIFTGUARD_CI_GATE_RESULT_V1` JSON emitted by `driftguard ci` (including
+`result_digest`). It rejects duplicate keys, malformed fields, and a mismatch
+between the supplied result digest and the independently recomputed canonical
+SHA-256 digest. It also rejects impossible aggregate/metric combinations and
+retains event data in an immutable JSON snapshot. It emits a neutral
+`org.fuckup.admission.observed` event for
+`PASS`, `WARN`, `BLOCK`, or `UNKNOWN`; it never flags an incident automatically.
+
+The caller must supply the event ID, source, subject, and timezone-aware
+observation time. Repeated identical results can therefore be represented as
+distinct occurrences. The digest proves internal content consistency **only**;
+it does not authenticate DriftGuard, the evaluator, or a run, and cannot grant
+promotion or deployment authority. No network, database, publisher, or
+protected-effect operation is performed. See
+[the integration contract](docs/architecture/DRIFTGUARD_CI_CONSUMER_V1.md).
+
 ## Install and reference path
 
 V0.1 is qualified on Python 3.12+.
