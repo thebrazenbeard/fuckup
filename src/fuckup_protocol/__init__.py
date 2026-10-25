@@ -9,6 +9,7 @@ from .ambiguity import (
 )
 from .authorization import PromotionAuthorization, authorize_promotion
 from .bindings import BindingConflictError, InjectionBinding, resolve_binding, selector_digest, selector_within_scope
+from .driftguard_consumer import consume_driftguard_ci_result
 from .effectiveness import (
     EffectivenessState,
     EffectivenessSubject,
@@ -149,6 +150,7 @@ __all__ = [
     "authorize_promotion",
     "can_transition",
     "claim",
+    "consume_driftguard_ci_result",
     "effect_digest",
     "factorial_conditions",
     "fail",
