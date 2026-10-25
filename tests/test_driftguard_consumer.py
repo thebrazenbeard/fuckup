@@ -247,8 +247,8 @@ def test_block_dominates_unrepresentable_and_unrepresentable_dominates_warn():
 def test_below_display_resolution_regression_violation_remains_flagged_by_producer():
     payload = json.loads(json.dumps(_GATE))
     payload["metrics"][0].update(
-        baseline=1.0, candidate=1.0 - 1e-13, regression=1e-13,
-        max_regression=0.0,
+        baseline=1e100, candidate=-1e-100, regression=1e100,
+        max_regression=1e100,
         reasons=["regression_exceeds_limit_below_display_resolution"],
     )
     event = _consume(_signed_json(payload))
