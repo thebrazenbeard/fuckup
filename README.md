@@ -71,15 +71,17 @@ protected-effect operation is performed. See
 
 ## Install and reference path
 
-V0.1 is qualified on Python 3.12+.
+The Python reference package requires **Python 3.12+**. Install from an authorized local checkout for a source-verifiable evaluation:
 
 Core library:
 
-`python -m pip install fuckup-protocol`
+`python -m pip install -e .`
 
-PostgreSQL-backed execution store:
+PostgreSQL-backed execution store (optional):
 
-`python -m pip install "fuckup-protocol[postgres]"`
+`python -m pip install -e ".[postgres]"`
+
+For local source qualification, install `.[test]` and run `python -m pytest -q`. The project metadata defines these extras and the test command; the repository by itself does not establish availability of a published package on a third-party registry.
 
 A minimal reversible reference path is:
 
@@ -129,3 +131,4 @@ Run the source suite with:
 Live PostgreSQL qualification additionally requires `FUCKUP_TEST_DATABASE_URL`.
 
 `main` is the authoritative source branch. The `v0.1.0` tag and GitHub release identify the first launched reference-runtime cut; later `main` commits may contain post-release maintenance or release tooling.
+
