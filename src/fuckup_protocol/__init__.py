@@ -78,6 +78,14 @@ from .plugins import (
 from .policy import PromotionContext, PromotionPolicy, StrictPromotionPolicy
 from .postgres_execution import DurableOperationStatus, DurableOutcomeRecord, PostgresExecutionStore
 from .reference_adapter import ReferenceFileInjector
+from .session_preflight import (
+    ContextMaterialization,
+    SessionPreflight,
+    SessionPreflightError,
+    load_reference_session_preflight,
+    verify_dispatch_currentness,
+    verify_materialized_prompt,
+)
 from .provenance import ProvenanceKind, ProvenanceRef
 from .state import CorrectionState, InvalidTransition, can_transition, require_transition
 from .validation import TestKind, ValidationReport
@@ -88,6 +96,7 @@ __all__ = [
     "BindingConflictError",
     "CausalHypothesis",
     "CorrectionRevision",
+    "ContextMaterialization",
     "CorrectionState",
     "DuplicateHandlerError",
     "DurableOperationStatus",
@@ -137,6 +146,8 @@ __all__ = [
     "QualificationResult",
     "ReadbackDisposition",
     "ReferenceFileInjector",
+    "SessionPreflight",
+    "SessionPreflightError",
     "SerializationCondition",
     "SideEffectClass",
     "StaleBindingError",
@@ -156,6 +167,7 @@ __all__ = [
     "fail",
     "fingerprint_incident",
     "lifecycle_event_type",
+    "load_reference_session_preflight",
     "operation_effect_digest",
     "recover_expired_lease",
     "require_transition",
@@ -166,4 +178,6 @@ __all__ = [
     "subject_digest",
     "succeed",
     "summarize_effectiveness",
+    "verify_materialized_prompt",
+    "verify_dispatch_currentness",
 ]

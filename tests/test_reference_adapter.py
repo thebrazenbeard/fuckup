@@ -61,6 +61,27 @@ def test_reference_file_injector_rejects_path_traversal(tmp_path):
         )
 
 
+def test_reference_file_readback_rejects_mutated_version_identity(tmp_path):
+    from fuckup_protocol.execution import ReadbackDisposition
+
+    adapter = ReferenceFileInjector(tmp_path)
+    request = {
+        "target": "reference-file:demo",
+        "operation_id": "op-1",
+        "effect_digest": "sha256:sample",
+        "effect_payload": {"rule": "verify"},
+    }
+    adapter.execute(request)
+    current = json.loads((tmp_path / "demo" / "current.json").read_text())
+    version_file = tmp_path / "demo" / "versions" / current["version_file"]
+    version = json.loads(version_file.read_text())
+    version["operation_id"] = "forged-operation"
+    version_file.write_text(json.dumps(version))
+
+    result = adapter.readback(request, None)
+    assert result.disposition == ReadbackDisposition.AMBIGUOUS
+
+
 def test_reference_file_injector_exact_replay_is_idempotent(tmp_path):
     adapter = ReferenceFileInjector(tmp_path)
     request = {

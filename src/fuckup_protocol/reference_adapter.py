@@ -134,6 +134,11 @@ class ReferenceFileInjector:
             )
 
         current = self._read_json(current_path)
+        if current.get("target") != str(request.get("target", "")):
+            return InjectorReadback(
+                ReadbackDisposition.AMBIGUOUS,
+                evidence_ref=f"reference-file:{target_key}:target-mismatch",
+            )
         if current.get("effect_digest") != effect_digest:
             return InjectorReadback(
                 ReadbackDisposition.FAILED,
@@ -157,6 +162,14 @@ class ReferenceFileInjector:
             return InjectorReadback(
                 ReadbackDisposition.AMBIGUOUS,
                 evidence_ref=f"reference-file:{target_key}:version-mismatch",
+            )
+        if (
+            version.get("target") != current.get("target")
+            or version.get("operation_id") != current.get("operation_id")
+        ):
+            return InjectorReadback(
+                ReadbackDisposition.AMBIGUOUS,
+                evidence_ref=f"reference-file:{target_key}:version-identity-mismatch",
             )
 
         return InjectorReadback(

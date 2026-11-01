@@ -2,6 +2,9 @@
 .coverage
 htmlcov/
 __pycache__/
+build/
+*.egg-info/
+.venv/
 *.py[cod]
 branch_structure.json
 temp_auto_push.bat

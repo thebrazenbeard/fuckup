@@ -104,6 +104,22 @@ adapter.register(registry)
 
 The filesystem adapter is for qualification/examples. Production adapters must supply their own readback and authority integration.
 
+### Session-start correction bridge (host-controlled)
+
+`load_reference_session_preflight()` can recover an exact approved correction
+from a current PostgreSQL binding and a previously VERIFIED reference-file
+effect on a **later session**. It rejects stale binding/revision, changed
+effect content, missing verification history, and absent durable outcomes.
+`verify_materialized_prompt()` checks that the actual outgoing model request
+includes the exact instruction once in a trusted host-controlled message role.
+
+The `fuckup-session-preflight` CLI emits a `PREPARED_NOT_MATERIALIZED` JSON
+bundle for a host to inject. **Neither this CLI nor the library automatically
+modifies ChatGPT's hosted sessions, proves provider delivery, or changes model
+weights.** The host must control message assembly, call the verification gate,
+and separately measure behavioral outcomes. See
+[session preflight bridge V1](docs/architecture/SESSION_PREFLIGHT_BRIDGE_V1.md).
+
 ## Licensing
 
 Original repository material is source-visible proprietary material under `LICENSE`. Noncommercial evaluation/research permissions are limited; commercial use requires a separate written license under `COMMERCIAL_LICENSE.md`. Contributions are governed by `CONTRIBUTING.md` and `CLA.md`. Third-party dependencies retain their own licenses; see `THIRD_PARTY_NOTICES.md`.
