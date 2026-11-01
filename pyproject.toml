@@ -28,6 +28,9 @@ postgres-test = [
   "psycopg[binary]>=3.2",
 ]
 
+[project.scripts]
+fuckup-session-preflight = "fuckup_protocol.session_preflight_cli:main"
+
 [tool.setuptools.packages.find]
 where = ["src"]
 

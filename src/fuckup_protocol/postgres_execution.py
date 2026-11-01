@@ -8,6 +8,7 @@ from uuid import uuid4
 
 from .bindings import InjectionBinding
 from .effectiveness import ObservationPhase, OutcomeObservation
+from .models import CorrectionRevision
 from .operations import (
     OperationEvent,
     OperationIntent,
@@ -311,6 +312,51 @@ class PostgresExecutionStore:
                 ),
             ).fetchone()
         return bool(row[0])
+
+    def correction_for_active_binding(self, binding: InjectionBinding) -> CorrectionRevision:
+        """Read the exact correction carried by a still-active authorized binding.
+
+        The database remains the correction authority. A caller-provided prompt,
+        digest, or JSON file cannot substitute for this read.
+        """
+        if not binding.executable:
+            raise PermissionError("correction read requires an executable binding")
+        with self._connect() as conn:
+            row = conn.execute(
+                """
+                SELECT cr.subject_digest, cr.payload, cr.reversible
+                FROM active_injection_bindings ab
+                JOIN correction_revisions cr
+                  ON cr.correction_id = ab.correction_id
+                 AND cr.revision = ab.correction_revision
+                 AND cr.subject_digest = ab.exact_subject_digest
+                WHERE ab.id = %s::uuid
+                  AND ab.promotion_id = %s::uuid
+                  AND ab.correction_id = %s::uuid
+                  AND ab.correction_revision = %s
+                  AND ab.selector_digest = %s
+                  AND ab.adapter = %s
+                  AND ab.adapter_version = %s
+                """,
+                (
+                    binding.id,
+                    binding.promotion_id,
+                    binding.correction_id,
+                    binding.correction_revision,
+                    binding.selector_digest,
+                    binding.adapter,
+                    binding.adapter_version,
+                ),
+            ).fetchone()
+        if row is None:
+            raise PermissionError("binding is no longer current or correction is missing")
+        return CorrectionRevision(
+            correction_id=binding.correction_id,
+            revision=binding.correction_revision,
+            subject_digest=row[0],
+            payload=row[1],
+            reversible=row[2],
+        )
 
     def record_outcome(self, observation: OutcomeObservation) -> DurableOutcomeRecord:
         if observation.phase != ObservationPhase.ACTIVE:
