@@ -48,17 +48,29 @@ What must change immediately to stop operating from a false assumption?
 
 ## K — Know
 
-Root-cause proposition:
+Exact subject/version/digest under examination:
 
-Evidence supporting it:
+Root-cause proposition (or explicit UNKNOWN/HYPOTHESIS):
 
-Evidence against it:
+Original source anchors and evidence kinds (USER_REPORT, SOURCE_INSPECTION, REAL_SYSTEM_PROBE, TEST, MODEL_REVIEW, INFERENCE):
+
+Observed atomic facts — report and independently observed outcomes kept separate:
+
+Evidence supporting it (with actual readback/reference):
+
+Evidence against it / contradictory statements:
 
 Alternative explanations:
 
-Scope/ceiling of the conclusion:
+Scope and evidence ceiling — what cannot be claimed:
 
 What would falsify this root-cause claim?
+
+Executed falsification attempts, outcomes, and independent reviewer provenance:
+
+Status: BLOCKED / PROVENANCE_BOUND / REVIEW_READY / independently verified under a separately named authority:
+
+Why an apparent model agreement or fluent explanation is not proof:
 
 ## U — Unlearn
 

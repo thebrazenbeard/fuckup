@@ -17,6 +17,12 @@ A vendor-neutral corrective-learning protocol and reference runtime for turning 
 
 “Unlearn” means versioned supersession, not destructive forgetting. “Prevent” means the strongest prevention state the evidence supports; it is not a magic guarantee that a class of failure can never recur.
 
+## Know boundary — evidence before explanation
+
+**Know does not mean "the assistant produced a plausible explanation."** It means that a specific, falsifiable explanation has survived evidence checks and is reported within its actual verification limits. A user's report, model inference, source inspection, executed test, and independent review are distinct kinds of evidence; none silently substitutes for another. An unknown internal mechanism must remain unknown.
+
+The opt-in Python `assess_know_claim` preflight in `src/fuckup_protocol/know_gate.py` rejects missing, stale, conflicting, or improperly classified provenance and requires separate causal support and falsification references before a root-cause candidate is **ready for review**. See [precise contract](docs/architecture/KNOW_EVIDENCE_GATE_V1.md) and [anonymized synthetic incident](docs/incidents/2026-11-04-ungrounded-context-assumption.md). These checks do **not** verify semantic entailment, authenticate external evidence, certify root causes, intercept ChatGPT responses, or activate a correction. Promoting or injecting a candidate requires separate trusted host authority and verification.
+
 ## Runtime
 
 V0.1 provides an executable corrective-learning core with:

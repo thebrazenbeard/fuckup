@@ -39,6 +39,15 @@ from .experiment import (
     factorial_conditions,
 )
 from .fingerprint import fingerprint_incident
+from .know_gate import (
+    ClaimKind,
+    ClaimProposal,
+    EvidenceKind,
+    EvidenceRef,
+    GateState,
+    KnowGateReport,
+    assess_know_claim,
+)
 from .jobs import (
     InvalidJobTransition,
     JobState,
@@ -95,6 +104,12 @@ __all__ = [
     "AmbiguityRoute",
     "BindingConflictError",
     "CausalHypothesis",
+    "ClaimKind",
+    "ClaimProposal",
+    "EvidenceKind",
+    "EvidenceRef",
+    "GateState",
+    "KnowGateReport",
     "CorrectionRevision",
     "ContextMaterialization",
     "CorrectionState",
@@ -158,6 +173,7 @@ __all__ = [
     "UnknownHandlerError",
     "ValidationReport",
     "assess_ambiguity",
+    "assess_know_claim",
     "authorize_promotion",
     "can_transition",
     "claim",
