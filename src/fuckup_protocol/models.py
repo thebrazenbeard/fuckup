@@ -1,18 +1,9 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from types import MappingProxyType
 from typing import Any, Mapping
 
-
-def _deep_freeze(value: Any) -> Any:
-    if isinstance(value, Mapping):
-        return MappingProxyType({str(key): _deep_freeze(item) for key, item in value.items()})
-    if isinstance(value, list | tuple):
-        return tuple(_deep_freeze(item) for item in value)
-    if isinstance(value, set | frozenset):
-        return frozenset(_deep_freeze(item) for item in value)
-    return value
+from ._canonical_json import deep_freeze_json as _deep_freeze
 
 
 @dataclass(frozen=True, slots=True)
