@@ -159,6 +159,7 @@ def load_reference_session_preflight(
             "target": operation.target,
             "operation_id": operation.id,
             "effect_digest": operation.effect_digest,
+            "effect_payload": _plain(correction.payload),
         },
         None,
     )
