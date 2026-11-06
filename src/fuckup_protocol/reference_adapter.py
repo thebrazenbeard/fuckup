@@ -38,6 +38,37 @@ class ReferenceFileInjector:
         self.name = name
         self.version = version
 
+    @staticmethod
+    def _is_redirect(path: Path) -> bool:
+        """Reject symlinks and Windows junctions, including dangling links."""
+        return path.is_symlink() or (hasattr(path, "is_junction") and path.is_junction())
+
+    def _guard_path(self, path: Path) -> Path:
+        """Fail closed on existing redirected paths below the configured root.
+
+        This check is appropriate for a trusted, access-controlled example
+        root. It does not defeat a concurrent adversary with write permission
+        who can swap parent directories between this check and I/O; a hostile
+        multi-user filesystem needs platform-specific dirfd/reparse controls.
+        """
+        if self._is_redirect(self.root):
+            raise ValueError("reference root must not be a symbolic link or junction")
+        anchor = self.root.resolve(strict=False)
+        try:
+            relative = path.relative_to(self.root)
+        except ValueError as exc:
+            raise ValueError("reference-file path escapes configured root") from exc
+        cursor = self.root
+        for part in relative.parts:
+            if part in (".", ".."):
+                raise ValueError("reference-file path contains traversal component")
+            cursor = cursor / part
+            if self._is_redirect(cursor):
+                raise ValueError("reference-file path traverses symbolic link or junction")
+        if not path.resolve(strict=False).is_relative_to(anchor):
+            raise ValueError("reference-file path resolves outside configured root")
+        return path
+
     @property
     def spec(self) -> HandlerSpec:
         return HandlerSpec(
@@ -65,16 +96,16 @@ class ReferenceFileInjector:
         if not isinstance(payload, dict):
             raise ValueError("effect_payload must be a mapping")
 
-        target_dir = self.root / target_key
-        versions = target_dir / "versions"
-        operations = target_dir / "operations"
+        target_dir = self._guard_path(self.root / target_key)
+        versions = self._guard_path(target_dir / "versions")
+        operations = self._guard_path(target_dir / "operations")
         versions.mkdir(parents=True, exist_ok=True)
         operations.mkdir(parents=True, exist_ok=True)
 
-        current_path = target_dir / "current.json"
-        receipt_path = operations / f"{operation_id}.json"
+        current_path = self._guard_path(target_dir / "current.json")
+        receipt_path = self._guard_path(operations / f"{operation_id}.json")
         version_name = self._digest_filename(effect_digest)
-        version_path = versions / version_name
+        version_path = self._guard_path(versions / version_name)
 
         if receipt_path.exists():
             receipt = self._read_json(receipt_path)
@@ -126,7 +157,7 @@ class ReferenceFileInjector:
     ) -> InjectorReadback:
         target_key = self._target_key(str(request.get("target", "")))
         effect_digest = str(request.get("effect_digest", ""))
-        current_path = self.root / target_key / "current.json"
+        current_path = self._guard_path(self.root / target_key / "current.json")
         if not current_path.exists():
             return InjectorReadback(
                 ReadbackDisposition.FAILED,
@@ -151,7 +182,8 @@ class ReferenceFileInjector:
                 ReadbackDisposition.AMBIGUOUS,
                 evidence_ref=f"reference-file:{target_key}:invalid-pointer",
             )
-        version_path = self.root / target_key / "versions" / version_file
+        version_file = self._safe_component(version_file, field="version_file")
+        version_path = self._guard_path(self.root / target_key / "versions" / version_file)
         if not version_path.exists():
             return InjectorReadback(
                 ReadbackDisposition.AMBIGUOUS,
@@ -189,9 +221,9 @@ class ReferenceFileInjector:
     def rollback(self, target: str, operation_id: str) -> Mapping[str, Any]:
         target_key = self._target_key(target)
         operation_id = self._safe_component(operation_id, field="operation_id")
-        target_dir = self.root / target_key
-        current_path = target_dir / "current.json"
-        receipt_path = target_dir / "operations" / f"{operation_id}.json"
+        target_dir = self._guard_path(self.root / target_key)
+        current_path = self._guard_path(target_dir / "current.json")
+        receipt_path = self._guard_path(target_dir / "operations" / f"{operation_id}.json")
         if not receipt_path.exists():
             raise KeyError(f"unknown reference-file operation: {operation_id}")
         receipt = self._read_json(receipt_path)
@@ -221,7 +253,7 @@ class ReferenceFileInjector:
 
     @staticmethod
     def _safe_component(value: str, *, field: str) -> str:
-        if not value or not _SAFE_COMPONENT.fullmatch(value):
+        if not value or value in (".", "..") or not _SAFE_COMPONENT.fullmatch(value):
             raise ValueError(f"{field} contains unsafe path characters")
         return value
 
