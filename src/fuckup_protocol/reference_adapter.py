@@ -232,6 +232,14 @@ class ReferenceFileInjector:
                 ReadbackDisposition.AMBIGUOUS,
                 evidence_ref=f"reference-file:{target_key}:version-identity-mismatch",
             )
+        if (
+            "effect_payload" in request
+            and version.get("payload") != _plain(request["effect_payload"])
+        ):
+            return InjectorReadback(
+                ReadbackDisposition.AMBIGUOUS,
+                evidence_ref=f"reference-file:{target_key}:payload-mismatch",
+            )
 
         return InjectorReadback(
             ReadbackDisposition.VERIFIED,
