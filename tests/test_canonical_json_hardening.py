@@ -31,6 +31,27 @@ def test_valid_v1_bytes_and_digest_have_no_migration():
     )
 
 
+def test_frozen_operation_and_correction_snapshots_rehash_without_change():
+    payload = {"nested": {"values": [1, "é", False]}}
+    journal = OperationJournal()
+    intent, duplicate = journal.prepare(
+        target="host", operation_kind="write", effect_payload=payload,
+        idempotency_key="freeze-1",
+    )
+    assert not duplicate
+    assert operation_effect_digest(
+        target=intent.target, operation_kind=intent.operation_kind,
+        effect_payload=intent.effect_payload,
+    ) == intent.effect_digest
+    correction = CorrectionRevision(
+        correction_id="c", revision=1, subject_digest=subject_digest(payload),
+        payload=payload,
+    )
+    assert subject_digest(correction.payload) == correction.subject_digest
+    payload["nested"]["values"].append("later mutation")
+    assert intent.effect_payload["nested"]["values"] == (1, "é", False)
+
+
 @pytest.mark.parametrize("malicious", [
     {1: "alias"},
     {1: "first", "1": "second"},
