@@ -113,6 +113,18 @@ class ReferencePathSecurityTests(unittest.TestCase):
             self.adapter.execute(changed)
         self.assertEqual(self.adapter.readback(request, None).disposition, ReadbackDisposition.VERIFIED)
 
+    def test_mutated_version_payload_not_verified_for_original_request(self):
+        request = self.request()
+        self.adapter.execute(request)
+        version = self.root / "demo" / "versions" / "sha256_abc.json"
+        record = json.loads(version.read_text())
+        record["payload"] = {"canary": "MUTATED"}
+        version.write_text(json.dumps(record))
+        self.assertEqual(
+            self.adapter.readback(request, None).disposition,
+            ReadbackDisposition.AMBIGUOUS,
+        )
+
     def test_old_operation_cannot_claim_or_rollback_new_current_with_same_digest(self):
         request = self.request()
         self.adapter.execute(request)
