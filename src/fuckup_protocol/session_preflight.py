@@ -155,7 +155,11 @@ def load_reference_session_preflight(
         raise SessionPreflightError("operation effect digest mismatch")
 
     readback = adapter.readback(
-        {"target": operation.target, "effect_digest": operation.effect_digest},
+        {
+            "target": operation.target,
+            "operation_id": operation.id,
+            "effect_digest": operation.effect_digest,
+        },
         None,
     )
     if readback.disposition != ReadbackDisposition.VERIFIED or readback.observed is None:
