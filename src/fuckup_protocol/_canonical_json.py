@@ -37,9 +37,18 @@ def canonical_json_bytes(value: Any) -> bytes:
     """Return existing v1 canonical bytes for valid JSON; fail closed otherwise."""
     validate_json_data(value)
     return json.dumps(
-        value, ensure_ascii=False, separators=(",", ":"),
+        _json_plain(value), ensure_ascii=False, separators=(",", ":"),
         sort_keys=True, allow_nan=False,
     ).encode("utf-8")
+
+
+def _json_plain(value: Any) -> Any:
+    """Make frozen Mapping/tuple snapshots serializable without coercing keys."""
+    if isinstance(value, Mapping):
+        return {key: _json_plain(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_json_plain(item) for item in value]
+    return value
 
 
 def deep_freeze_json(value: Any) -> Any:
