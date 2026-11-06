@@ -2,22 +2,39 @@
 
 # The F.U.C.K.U.P. Protocol
 
-> **F**lag • **U**nderstand • **C**alibrate • **K**now • **U**nlearn • **P**revent
+> **Find Unknowns, Calibrate Knowledge, Update Protocols**
 
-A vendor-neutral corrective-learning protocol and reference runtime for turning failures into bounded, testable, reversible prevention mechanisms.
+Six words, three paired phases, one evidence-bound corrective-learning loop. F.U.C.K.U.P. is a vendor-neutral protocol and reference runtime for detecting discrepancies, making uncertainty explicit, qualifying corrections, and checking whether safeguards actually reduce recurrence.
 
 ## Semantic loop
 
-1. **Flag** — capture the failure without deflection or evidence loss.
-2. **Understand** — reconstruct context, provenance, dependencies, and competing explanations.
-3. **Calibrate** — correct immediate assumptions and expose ambiguity instead of hiding it.
-4. **Know** — isolate a supported root-cause proposition with an explicit evidence ceiling.
-5. **Unlearn** — supersede the bad behavior or assumption without erasing history.
-6. **Prevent** — qualify and scope a guardrail, then observe whether it actually helps.
+1. **Find** — identify the exact gap between expected and observed behavior; preserve the original observation and its provenance.
+2. **Unknowns** — enumerate missing evidence, ambiguous context, dependencies, counterexamples, and plausible competing explanations before choosing a cause.
+3. **Calibrate** — adjust immediate assumptions, confidence, and containment to fit what the evidence presently supports.
+4. **Knowledge** — assess an exact-subject causal proposition, its support and counterevidence, alternatives, falsifier, and current evidence ceiling.
+5. **Update** — propose and qualify a versioned, reversible supersession of the affected rule, assumption, or behavior without erasing history.
+6. **Protocols** — define scoped validation, policy, monitoring, and recovery controls; then observe whether they are effective.
 
-“Unlearn” means versioned supersession, not destructive forgetting. “Prevent” means the strongest prevention state the evidence supports; it is not a magic guarantee that a class of failure can never recur.
+The three pairs are **Find Unknowns** (recognize and bound the problem), **Calibrate Knowledge** (correct belief against evidence), and **Update Protocols** (qualify a change and monitor consequences).
 
-## Know boundary — evidence before explanation
+“Update” is not a claim of destructive forgetting or direct model-weight editing. “Protocols” is not a guarantee that a failure can never recur: prevention claims stop at the scope and effectiveness supported by observed evidence.
+
+### Backward-compatible machine vocabulary
+
+The new words are **presentation labels**, not new runtime states or database fields. V0.1 JSON records, retrospective schemas, APIs, SQL, and existing persisted history continue to use the six canonical keys below.
+
+| Paired phase | New stage | Existing V0.1 stage | Unchanged field |
+| --- | --- | --- | --- |
+| Find Unknowns | Find | Flag | `flag` |
+| Find Unknowns | Unknowns | Understand | `understand` |
+| Calibrate Knowledge | Calibrate | Calibrate | `calibrate` |
+| Calibrate Knowledge | Knowledge | Know | `know` |
+| Update Protocols | Update | Unlearn | `unlearn` |
+| Update Protocols | Protocols | Prevent | `prevent` |
+
+The source-only mapping lives in `src/fuckup_protocol/presentation.py`. Historic records retain their original labels and meaning. No automatic schema migration, memory admission, promotion authority, or deployment follows from this naming update. See [presentation mapping V1](docs/architecture/PRESENTATION_MAPPING_V1.md).
+
+## Knowledge boundary (legacy Know) — evidence before explanation
 
 **Know does not mean "the assistant produced a plausible explanation."** It means that a specific, falsifiable explanation has survived evidence checks and is reported within its actual verification limits. A user's report, model inference, source inspection, executed test, and independent review are distinct kinds of evidence; none silently substitutes for another. An unknown internal mechanism must remain unknown.
 
@@ -153,4 +170,3 @@ Run the source suite with:
 Live PostgreSQL qualification additionally requires `FUCKUP_TEST_DATABASE_URL`.
 
 `main` is the authoritative source branch. The `v0.1.0` tag and GitHub release identify the first launched reference-runtime cut; later `main` commits may contain post-release maintenance or release tooling.
-
