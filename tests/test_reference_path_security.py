@@ -1,8 +1,10 @@
 """Hostile path tests against a local, synthetic reference-file fixture."""
 
+from concurrent.futures import ThreadPoolExecutor
 import json
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from threading import Barrier
 import unittest
 
 from fuckup_protocol.reference_adapter import ReferenceFileInjector
@@ -124,6 +126,57 @@ class ReferencePathSecurityTests(unittest.TestCase):
             self.adapter.readback(request, None).disposition,
             ReadbackDisposition.AMBIGUOUS,
         )
+
+    def test_missing_expected_payload_never_qualifies_readback(self):
+        request = self.request()
+        self.adapter.execute(request)
+        payload_unbound = {key: value for key, value in request.items() if key != "effect_payload"}
+        report = self.adapter.readback(payload_unbound, None)
+        self.assertEqual(report.disposition, ReadbackDisposition.AMBIGUOUS)
+
+    def test_noncanonical_version_pointer_does_not_qualify_same_bytes(self):
+        request = self.request()
+        self.adapter.execute(request)
+        target = self.root / "demo"
+        current_path = target / "current.json"
+        current = json.loads(current_path.read_text())
+        original = target / "versions" / current["version_file"]
+        (target / "versions" / "alternate-valid.json").write_bytes(original.read_bytes())
+        current["version_file"] = "alternate-valid.json"
+        current_path.write_text(json.dumps(current))
+        report = self.adapter.readback(request, None)
+        self.assertEqual(report.disposition, ReadbackDisposition.AMBIGUOUS)
+
+    def test_concurrent_same_digest_distinct_operations_only_one_commits(self):
+        reached_reservation = Barrier(2, timeout=5)
+
+        class ContendingInjector(ReferenceFileInjector):
+            def _create_immutable_json(self, path, value):
+                reached_reservation.wait()
+                return super()._create_immutable_json(path, value)
+
+        first = self.request(operation_id="op1")
+        second = {**self.request(operation_id="op2"), "effect_payload": {"canary": "OTHER"}}
+
+        def attempt(request):
+            try:
+                return ("success", ContendingInjector(self.root).execute(request))
+            except RuntimeError as error:
+                return ("rejected", str(error))
+
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            outcomes = list(pool.map(attempt, (first, second)))
+
+        self.assertEqual([state for state, _ in outcomes].count("success"), 1)
+        self.assertEqual([state for state, _ in outcomes].count("rejected"), 1)
+        target = self.root / "demo"
+        current = json.loads((target / "current.json").read_text())
+        version = json.loads((target / "versions" / current["version_file"]).read_text())
+        self.assertEqual(version["operation_id"], current["operation_id"])
+        self.assertEqual(len(list((target / "operations").glob("*.json"))), 1)
+        for request in (first, second):
+            expected = ReadbackDisposition.VERIFIED if request["operation_id"] == current["operation_id"] else ReadbackDisposition.FAILED
+            self.assertEqual(self.adapter.readback(request, None).disposition, expected)
 
     def test_old_operation_cannot_claim_or_rollback_new_current_with_same_digest(self):
         request = self.request()
