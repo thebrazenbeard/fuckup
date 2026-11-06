@@ -152,7 +152,7 @@ class ReferenceFileInjector:
             "effect_digest": effect_digest,
             "payload": payload,
         }
-        self._atomic_json(version_path, version_record)
+        self._create_immutable_json(version_path, version_record)
 
         receipt = {
             "target": str(request["target"]),
@@ -212,6 +212,11 @@ class ReferenceFileInjector:
                 evidence_ref=f"reference-file:{target_key}:invalid-pointer",
             )
         version_file = self._safe_component(version_file, field="version_file")
+        if version_file != self._digest_filename(effect_digest):
+            return InjectorReadback(
+                ReadbackDisposition.AMBIGUOUS,
+                evidence_ref=f"reference-file:{target_key}:noncanonical-version-pointer",
+            )
         version_path = self._guard_path(self.root / target_key / "versions" / version_file)
         if not version_path.exists():
             return InjectorReadback(
@@ -232,10 +237,12 @@ class ReferenceFileInjector:
                 ReadbackDisposition.AMBIGUOUS,
                 evidence_ref=f"reference-file:{target_key}:version-identity-mismatch",
             )
-        if (
-            "effect_payload" in request
-            and version.get("payload") != _plain(request["effect_payload"])
-        ):
+        if "effect_payload" not in request:
+            return InjectorReadback(
+                ReadbackDisposition.AMBIGUOUS,
+                evidence_ref=f"reference-file:{target_key}:missing-expected-payload",
+            )
+        if version.get("payload") != _plain(request["effect_payload"]):
             return InjectorReadback(
                 ReadbackDisposition.AMBIGUOUS,
                 evidence_ref=f"reference-file:{target_key}:payload-mismatch",
@@ -314,6 +321,29 @@ class ReferenceFileInjector:
         if not isinstance(value, dict):
             raise ValueError(f"expected JSON object in {path}")
         return value
+
+    @staticmethod
+    def _create_immutable_json(path: Path, value: Mapping[str, Any]) -> None:
+        """Exclusively reserve a version across independent writers.
+
+        O_CREAT|O_EXCL prevents two processes from acknowledging creation of
+        the same digest filename. A crash while writing can leave a partial
+        version; this deliberately fails closed for manual reconciliation.
+        It is not an atomic transaction with the later receipt/current writes.
+        """
+        encoded = json.dumps(
+            _plain(value), ensure_ascii=False, sort_keys=True, separators=(",", ":")
+        ).encode("utf-8")
+        try:
+            descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        except FileExistsError as exc:
+            raise RuntimeError(
+                "effect digest already has a reference-file version; reconcile its operation"
+            ) from exc
+        with os.fdopen(descriptor, "wb") as stream:
+            stream.write(encoded)
+            stream.flush()
+            os.fsync(stream.fileno())
 
     @staticmethod
     def _atomic_json(path: Path, value: Mapping[str, Any]) -> None:
