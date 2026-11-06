@@ -91,6 +91,42 @@ class ReferencePathSecurityTests(unittest.TestCase):
         self.assertEqual(result["rolled_back_effect_digest"], "sha256:abc")
         self.assertFalse((self.root / "demo" / "current.json").exists())
 
+    def test_same_digest_other_operation_cannot_overwrite_immutable_version(self):
+        first = self.request()
+        self.adapter.execute(first)
+        version = self.root / "demo" / "versions" / "sha256_abc.json"
+        current = self.root / "demo" / "current.json"
+        original_version = version.read_bytes()
+        original_current = current.read_bytes()
+        second = {**first, "operation_id": "op2", "effect_payload": {"canary": "DIFFERENT"}}
+        with self.assertRaisesRegex(RuntimeError, "digest already has"):
+            self.adapter.execute(second)
+        self.assertEqual(version.read_bytes(), original_version)
+        self.assertEqual(current.read_bytes(), original_current)
+        self.assertFalse((self.root / "demo" / "operations" / "op2.json").exists())
+
+    def test_existing_operation_same_digest_changed_payload_rejected(self):
+        request = self.request()
+        self.adapter.execute(request)
+        changed = {**request, "effect_payload": {"canary": "DIFFERENT"}}
+        with self.assertRaisesRegex(ValueError, "replay payload"):
+            self.adapter.execute(changed)
+        self.assertEqual(self.adapter.readback(request, None).disposition, ReadbackDisposition.VERIFIED)
+
+    def test_old_operation_cannot_claim_or_rollback_new_current_with_same_digest(self):
+        request = self.request()
+        self.adapter.execute(request)
+        current = self.root / "demo" / "current.json"
+        forged = json.loads(current.read_text())
+        forged["operation_id"] = "op2"
+        current.write_text(json.dumps(forged))
+        self.assertEqual(self.adapter.readback(request, None).disposition, ReadbackDisposition.FAILED)
+        with self.assertRaisesRegex(RuntimeError, "not current"):
+            self.adapter.execute(request)
+        with self.assertRaisesRegex(RuntimeError, "newer or missing"):
+            self.adapter.rollback("reference-file:demo", "op1")
+        self.assertTrue(current.exists())
+
 
 if __name__ == "__main__":
     unittest.main()
