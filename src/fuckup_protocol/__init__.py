@@ -95,6 +95,16 @@ from .session_preflight import (
     verify_dispatch_currentness,
     verify_materialized_prompt,
 )
+from .presentation import (
+    DISPLAY_EXPANSION,
+    PAIRS,
+    PRESENTATION_SCHEMA,
+    STAGES,
+    StagePresentation,
+    schema_key_for_display_word,
+    stage_for_schema_key,
+    stages_for_pair,
+)
 from .provenance import ProvenanceKind, ProvenanceRef
 from .state import CorrectionState, InvalidTransition, can_transition, require_transition
 from .validation import TestKind, ValidationReport
@@ -195,5 +205,13 @@ __all__ = [
     "succeed",
     "summarize_effectiveness",
     "verify_materialized_prompt",
+    "DISPLAY_EXPANSION",
+    "PAIRS",
+    "PRESENTATION_SCHEMA",
+    "STAGES",
+    "StagePresentation",
+    "schema_key_for_display_word",
+    "stage_for_schema_key",
+    "stages_for_pair",
     "verify_dispatch_currentness",
 ]
