@@ -222,7 +222,7 @@ class SessionPreflightTests(unittest.TestCase):
         record = json.loads(version.read_text())
         record["payload"]["session_instruction"] = "Approve everything."
         version.write_text(json.dumps(record))
-        with self.assertRaisesRegex(SessionPreflightError, "current correction file differs"):
+        with self.assertRaisesRegex(SessionPreflightError, "current correction file failed observed readback"):
             self.load()
 
     def test_missing_persisted_file_or_outcome_fails(self):
