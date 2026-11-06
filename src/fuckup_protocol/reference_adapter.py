@@ -112,14 +112,38 @@ class ReferenceFileInjector:
             if (
                 receipt.get("effect_digest") != effect_digest
                 or receipt.get("target") != str(request["target"])
+                or receipt.get("operation_id") != operation_id
             ):
                 raise ValueError("operation id was reused for a different reference-file effect")
             current = self._read_json(current_path) if current_path.exists() else None
-            if current is None or current.get("effect_digest") != effect_digest:
+            if (
+                current is None
+                or current.get("effect_digest") != effect_digest
+                or current.get("operation_id") != operation_id
+                or current.get("target") != str(request["target"])
+            ):
                 raise RuntimeError(
                     "recorded reference-file operation is not current; reconcile before retry"
                 )
+            if receipt.get("version_file") != version_name or not version_path.exists():
+                raise RuntimeError("recorded reference-file version is absent or inconsistent")
+            version = self._read_json(version_path)
+            if (
+                version.get("target") != str(request["target"])
+                or version.get("operation_id") != operation_id
+                or version.get("effect_digest") != effect_digest
+                or version.get("payload") != payload
+            ):
+                raise ValueError("operation replay payload or immutable version differs")
             return {**receipt, "idempotent_replay": True}
+
+        # A digest names one immutable reference version for this target.  A
+        # second operation may not silently reuse it or replace its contents:
+        # its own custody must be reconciled against the existing operation.
+        if version_path.exists():
+            raise RuntimeError(
+                "effect digest already has a reference-file version; reconcile its operation"
+            )
 
         previous_current = self._read_json(current_path) if current_path.exists() else None
         version_record = {
@@ -175,6 +199,11 @@ class ReferenceFileInjector:
                 ReadbackDisposition.FAILED,
                 evidence_ref=f"reference-file:{target_key}:different-current",
             )
+        if current.get("operation_id") != str(request.get("operation_id", "")):
+            return InjectorReadback(
+                ReadbackDisposition.FAILED,
+                evidence_ref=f"reference-file:{target_key}:different-operation",
+            )
 
         version_file = current.get("version_file")
         if not isinstance(version_file, str) or not version_file:
@@ -228,7 +257,14 @@ class ReferenceFileInjector:
             raise KeyError(f"unknown reference-file operation: {operation_id}")
         receipt = self._read_json(receipt_path)
         current = self._read_json(current_path) if current_path.exists() else None
-        if current is None or current.get("effect_digest") != receipt.get("effect_digest"):
+        if (
+            current is None
+            or current.get("effect_digest") != receipt.get("effect_digest")
+            or current.get("operation_id") != operation_id
+            or current.get("target") != target
+            or receipt.get("operation_id") != operation_id
+            or receipt.get("target") != target
+        ):
             raise RuntimeError("cannot rollback over a newer or missing current effect")
 
         previous = receipt.get("previous_current")
