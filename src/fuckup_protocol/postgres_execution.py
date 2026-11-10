@@ -6,6 +6,7 @@ from datetime import datetime
 from typing import Any, Callable, Mapping
 from uuid import uuid4
 
+from ._canonical_json import validate_json_data
 from .bindings import InjectionBinding
 from .effectiveness import ObservationPhase, OutcomeObservation
 from .models import CorrectionRevision
@@ -73,6 +74,7 @@ class PostgresExecutionStore:
         idempotency_key: str,
         prepared_at: datetime | None = None,
     ) -> tuple[OperationIntent, bool]:
+        validate_json_data(effect_payload)
         payload = _plain(effect_payload)
         digest = operation_effect_digest(
             target=target,
@@ -246,6 +248,7 @@ class PostgresExecutionStore:
         self,
         context: Mapping[str, str],
     ) -> tuple[InjectionBinding, ...]:
+        validate_json_data(context)
         encoded = json.dumps(dict(context), sort_keys=True, separators=(",", ":"))
         with self._connect() as conn:
             rows = conn.execute(

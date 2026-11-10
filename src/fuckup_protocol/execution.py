@@ -1,12 +1,12 @@
 from __future__ import annotations
 
 import hashlib
-import json
 from dataclasses import dataclass
 from enum import StrEnum
 from types import MappingProxyType
 from typing import Any, Callable, Mapping
 
+from ._canonical_json import canonical_json_bytes, validate_json_data
 from .bindings import InjectionBinding, resolve_binding
 from .effectiveness import EffectivenessSubject, ObservationPhase, OutcomeObservation
 from .operations import OperationIntent, OperationJournal, OperationState
@@ -80,12 +80,8 @@ def _plain(value: Any) -> Any:
 
 
 def _payload_digest(payload: Mapping[str, Any]) -> str:
-    encoded = json.dumps(
-        _plain(payload),
-        ensure_ascii=False,
-        separators=(",", ":"),
-        sort_keys=True,
-    ).encode("utf-8")
+    validate_json_data(payload)
+    encoded = canonical_json_bytes(_plain(payload))
     return f"sha256:{hashlib.sha256(encoded).hexdigest()}"
 
 
@@ -116,6 +112,10 @@ class ExecutionCoordinator:
         effect_payload: Mapping[str, Any],
         idempotency_key: str,
     ) -> ExecutionResult:
+        # Fail before external currentness/authority callbacks can observe a
+        # payload whose keys or numbers cannot be bound to a unique JSON effect.
+        validate_json_data(effect_payload)
+        validate_json_data(context)
         binding = resolve_binding(bindings, context)
         if binding is None:
             raise NoActiveBindingError("no active injection binding matches execution context")
@@ -383,7 +383,15 @@ class ExecutionCoordinator:
             )
 
         observed = readback.observed or {}
-        observed_digest = _payload_digest(observed)
+        try:
+            observed_digest = _payload_digest(observed)
+        except (TypeError, ValueError):
+            if self._operations.state(operation.id) == OperationState.ATTEMPTED:
+                self._operations.mark_ambiguous(
+                    operation.id,
+                    evidence_ref=f"invalid-readback-json:{spec.name}@{spec.version}",
+                )
+            raise
         self._operations.reconcile(
             operation.id,
             verified=True,
