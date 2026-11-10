@@ -38,6 +38,37 @@ class ReferenceFileInjector:
         self.name = name
         self.version = version
 
+    @staticmethod
+    def _is_redirect(path: Path) -> bool:
+        """Reject symlinks and Windows junctions, including dangling links."""
+        return path.is_symlink() or (hasattr(path, "is_junction") and path.is_junction())
+
+    def _guard_path(self, path: Path) -> Path:
+        """Fail closed on existing redirected paths below the configured root.
+
+        This check is appropriate for a trusted, access-controlled example
+        root. It does not defeat a concurrent adversary with write permission
+        who can swap parent directories between this check and I/O; a hostile
+        multi-user filesystem needs platform-specific dirfd/reparse controls.
+        """
+        if self._is_redirect(self.root):
+            raise ValueError("reference root must not be a symbolic link or junction")
+        anchor = self.root.resolve(strict=False)
+        try:
+            relative = path.relative_to(self.root)
+        except ValueError as exc:
+            raise ValueError("reference-file path escapes configured root") from exc
+        cursor = self.root
+        for part in relative.parts:
+            if part in (".", ".."):
+                raise ValueError("reference-file path contains traversal component")
+            cursor = cursor / part
+            if self._is_redirect(cursor):
+                raise ValueError("reference-file path traverses symbolic link or junction")
+        if not path.resolve(strict=False).is_relative_to(anchor):
+            raise ValueError("reference-file path resolves outside configured root")
+        return path
+
     @property
     def spec(self) -> HandlerSpec:
         return HandlerSpec(
@@ -65,30 +96,54 @@ class ReferenceFileInjector:
         if not isinstance(payload, dict):
             raise ValueError("effect_payload must be a mapping")
 
-        target_dir = self.root / target_key
-        versions = target_dir / "versions"
-        operations = target_dir / "operations"
+        target_dir = self._guard_path(self.root / target_key)
+        versions = self._guard_path(target_dir / "versions")
+        operations = self._guard_path(target_dir / "operations")
         versions.mkdir(parents=True, exist_ok=True)
         operations.mkdir(parents=True, exist_ok=True)
 
-        current_path = target_dir / "current.json"
-        receipt_path = operations / f"{operation_id}.json"
+        current_path = self._guard_path(target_dir / "current.json")
+        receipt_path = self._guard_path(operations / f"{operation_id}.json")
         version_name = self._digest_filename(effect_digest)
-        version_path = versions / version_name
+        version_path = self._guard_path(versions / version_name)
 
         if receipt_path.exists():
             receipt = self._read_json(receipt_path)
             if (
                 receipt.get("effect_digest") != effect_digest
                 or receipt.get("target") != str(request["target"])
+                or receipt.get("operation_id") != operation_id
             ):
                 raise ValueError("operation id was reused for a different reference-file effect")
             current = self._read_json(current_path) if current_path.exists() else None
-            if current is None or current.get("effect_digest") != effect_digest:
+            if (
+                current is None
+                or current.get("effect_digest") != effect_digest
+                or current.get("operation_id") != operation_id
+                or current.get("target") != str(request["target"])
+            ):
                 raise RuntimeError(
                     "recorded reference-file operation is not current; reconcile before retry"
                 )
+            if receipt.get("version_file") != version_name or not version_path.exists():
+                raise RuntimeError("recorded reference-file version is absent or inconsistent")
+            version = self._read_json(version_path)
+            if (
+                version.get("target") != str(request["target"])
+                or version.get("operation_id") != operation_id
+                or version.get("effect_digest") != effect_digest
+                or version.get("payload") != payload
+            ):
+                raise ValueError("operation replay payload or immutable version differs")
             return {**receipt, "idempotent_replay": True}
+
+        # A digest names one immutable reference version for this target.  A
+        # second operation may not silently reuse it or replace its contents:
+        # its own custody must be reconciled against the existing operation.
+        if version_path.exists():
+            raise RuntimeError(
+                "effect digest already has a reference-file version; reconcile its operation"
+            )
 
         previous_current = self._read_json(current_path) if current_path.exists() else None
         version_record = {
@@ -97,7 +152,7 @@ class ReferenceFileInjector:
             "effect_digest": effect_digest,
             "payload": payload,
         }
-        self._atomic_json(version_path, version_record)
+        self._create_immutable_json(version_path, version_record)
 
         receipt = {
             "target": str(request["target"]),
@@ -126,7 +181,7 @@ class ReferenceFileInjector:
     ) -> InjectorReadback:
         target_key = self._target_key(str(request.get("target", "")))
         effect_digest = str(request.get("effect_digest", ""))
-        current_path = self.root / target_key / "current.json"
+        current_path = self._guard_path(self.root / target_key / "current.json")
         if not current_path.exists():
             return InjectorReadback(
                 ReadbackDisposition.FAILED,
@@ -144,6 +199,11 @@ class ReferenceFileInjector:
                 ReadbackDisposition.FAILED,
                 evidence_ref=f"reference-file:{target_key}:different-current",
             )
+        if current.get("operation_id") != str(request.get("operation_id", "")):
+            return InjectorReadback(
+                ReadbackDisposition.FAILED,
+                evidence_ref=f"reference-file:{target_key}:different-operation",
+            )
 
         version_file = current.get("version_file")
         if not isinstance(version_file, str) or not version_file:
@@ -151,7 +211,13 @@ class ReferenceFileInjector:
                 ReadbackDisposition.AMBIGUOUS,
                 evidence_ref=f"reference-file:{target_key}:invalid-pointer",
             )
-        version_path = self.root / target_key / "versions" / version_file
+        version_file = self._safe_component(version_file, field="version_file")
+        if version_file != self._digest_filename(effect_digest):
+            return InjectorReadback(
+                ReadbackDisposition.AMBIGUOUS,
+                evidence_ref=f"reference-file:{target_key}:noncanonical-version-pointer",
+            )
+        version_path = self._guard_path(self.root / target_key / "versions" / version_file)
         if not version_path.exists():
             return InjectorReadback(
                 ReadbackDisposition.AMBIGUOUS,
@@ -171,6 +237,16 @@ class ReferenceFileInjector:
                 ReadbackDisposition.AMBIGUOUS,
                 evidence_ref=f"reference-file:{target_key}:version-identity-mismatch",
             )
+        if "effect_payload" not in request:
+            return InjectorReadback(
+                ReadbackDisposition.AMBIGUOUS,
+                evidence_ref=f"reference-file:{target_key}:missing-expected-payload",
+            )
+        if version.get("payload") != _plain(request["effect_payload"]):
+            return InjectorReadback(
+                ReadbackDisposition.AMBIGUOUS,
+                evidence_ref=f"reference-file:{target_key}:payload-mismatch",
+            )
 
         return InjectorReadback(
             ReadbackDisposition.VERIFIED,
@@ -189,14 +265,21 @@ class ReferenceFileInjector:
     def rollback(self, target: str, operation_id: str) -> Mapping[str, Any]:
         target_key = self._target_key(target)
         operation_id = self._safe_component(operation_id, field="operation_id")
-        target_dir = self.root / target_key
-        current_path = target_dir / "current.json"
-        receipt_path = target_dir / "operations" / f"{operation_id}.json"
+        target_dir = self._guard_path(self.root / target_key)
+        current_path = self._guard_path(target_dir / "current.json")
+        receipt_path = self._guard_path(target_dir / "operations" / f"{operation_id}.json")
         if not receipt_path.exists():
             raise KeyError(f"unknown reference-file operation: {operation_id}")
         receipt = self._read_json(receipt_path)
         current = self._read_json(current_path) if current_path.exists() else None
-        if current is None or current.get("effect_digest") != receipt.get("effect_digest"):
+        if (
+            current is None
+            or current.get("effect_digest") != receipt.get("effect_digest")
+            or current.get("operation_id") != operation_id
+            or current.get("target") != target
+            or receipt.get("operation_id") != operation_id
+            or receipt.get("target") != target
+        ):
             raise RuntimeError("cannot rollback over a newer or missing current effect")
 
         previous = receipt.get("previous_current")
@@ -221,7 +304,7 @@ class ReferenceFileInjector:
 
     @staticmethod
     def _safe_component(value: str, *, field: str) -> str:
-        if not value or not _SAFE_COMPONENT.fullmatch(value):
+        if not value or value in (".", "..") or not _SAFE_COMPONENT.fullmatch(value):
             raise ValueError(f"{field} contains unsafe path characters")
         return value
 
@@ -238,6 +321,29 @@ class ReferenceFileInjector:
         if not isinstance(value, dict):
             raise ValueError(f"expected JSON object in {path}")
         return value
+
+    @staticmethod
+    def _create_immutable_json(path: Path, value: Mapping[str, Any]) -> None:
+        """Exclusively reserve a version across independent writers.
+
+        O_CREAT|O_EXCL prevents two processes from acknowledging creation of
+        the same digest filename. A crash while writing can leave a partial
+        version; this deliberately fails closed for manual reconciliation.
+        It is not an atomic transaction with the later receipt/current writes.
+        """
+        encoded = json.dumps(
+            _plain(value), ensure_ascii=False, sort_keys=True, separators=(",", ":")
+        ).encode("utf-8")
+        try:
+            descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        except FileExistsError as exc:
+            raise RuntimeError(
+                "effect digest already has a reference-file version; reconcile its operation"
+            ) from exc
+        with os.fdopen(descriptor, "wb") as stream:
+            stream.write(encoded)
+            stream.flush()
+            os.fsync(stream.fileno())
 
     @staticmethod
     def _atomic_json(path: Path, value: Mapping[str, Any]) -> None:
