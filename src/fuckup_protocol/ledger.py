@@ -1,13 +1,12 @@
 from __future__ import annotations
 
 import hashlib
-import json
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from types import MappingProxyType
 from typing import Any, Callable, Mapping
 from uuid import uuid4
 
+from ._canonical_json import canonical_json_bytes, deep_freeze_json as _deep_freeze
 from .authorization import PromotionAuthorization
 from .models import CorrectionRevision, PolicyDecision, QualificationResult
 from .validation import ValidationReport
@@ -17,32 +16,19 @@ def _utcnow() -> datetime:
     return datetime.now(timezone.utc)
 
 
-def _deep_freeze(value: Any) -> Any:
-    if isinstance(value, Mapping):
-        return MappingProxyType({str(key): _deep_freeze(item) for key, item in value.items()})
-    if isinstance(value, list | tuple):
-        return tuple(_deep_freeze(item) for item in value)
-    if isinstance(value, set | frozenset):
-        return frozenset(_deep_freeze(item) for item in value)
-    return value
-
-
 def subject_digest(payload: Mapping[str, Any]) -> str:
-    encoded = json.dumps(payload, ensure_ascii=False, separators=(",", ":"), sort_keys=True).encode("utf-8")
+    encoded = canonical_json_bytes(payload)
     return f"sha256:{hashlib.sha256(encoded).hexdigest()}"
 
 
 def effect_digest(*, incident_id: str, event_type: str, payload: Mapping[str, Any]) -> str:
-    encoded = json.dumps(
+    encoded = canonical_json_bytes(
         {
             "incident_id": incident_id,
             "event_type": event_type,
             "payload": payload,
         },
-        ensure_ascii=False,
-        separators=(",", ":"),
-        sort_keys=True,
-    ).encode("utf-8")
+    )
     return f"sha256:{hashlib.sha256(encoded).hexdigest()}"
 
 
@@ -152,6 +138,8 @@ class InMemoryLedger:
         observed_at: datetime | None = None,
         source_ref: str | None = None,
     ) -> tuple[IncidentRecord, bool]:
+        # Validate before deduplication can mutate occurrence_count or indexes.
+        payload_digest = subject_digest(payload)
         now = observed_at or _utcnow()
         key = (fingerprint_version, fingerprint)
         existing_id = self._incident_by_fingerprint.get(key)
@@ -162,6 +150,7 @@ class InMemoryLedger:
             self._record_occurrence(
                 incident=incident,
                 payload=payload,
+                payload_digest=payload_digest,
                 observed_at=now,
                 source_ref=source_ref,
             )
@@ -181,6 +170,7 @@ class InMemoryLedger:
         self._record_occurrence(
             incident=incident,
             payload=payload,
+            payload_digest=payload_digest,
             observed_at=now,
             source_ref=source_ref,
         )
@@ -196,6 +186,7 @@ class InMemoryLedger:
         *,
         incident: IncidentRecord,
         payload: Mapping[str, Any],
+        payload_digest: str,
         observed_at: datetime,
         source_ref: str | None,
     ) -> IncidentOccurrenceRecord:
@@ -205,7 +196,7 @@ class InMemoryLedger:
             incident_id=incident.id,
             ordinal=len(records) + 1,
             payload=dict(payload),
-            payload_digest=subject_digest(payload),
+            payload_digest=payload_digest,
             observed_at=observed_at,
             source_ref=source_ref,
         )

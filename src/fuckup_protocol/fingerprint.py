@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 import hashlib
-import json
 from collections.abc import Mapping, Sequence
 from typing import Any
+
+from ._canonical_json import canonical_json_bytes
 
 
 DEFAULT_VOLATILE_FIELDS = frozenset({
@@ -18,10 +19,12 @@ DEFAULT_VOLATILE_FIELDS = frozenset({
 
 def _canonicalize(value: Any, ignored_fields: frozenset[str]) -> Any:
     if isinstance(value, Mapping):
+        if any(not isinstance(key, str) for key in value):
+            raise TypeError("JSON evidence mapping keys must be strings")
         return {
-            str(key): _canonicalize(item, ignored_fields)
-            for key, item in sorted(value.items(), key=lambda pair: str(pair[0]))
-            if str(key) not in ignored_fields
+            key: _canonicalize(item, ignored_fields)
+            for key, item in sorted(value.items())
+            if key not in ignored_fields
         }
     if isinstance(value, Sequence) and not isinstance(value, (str, bytes, bytearray)):
         return [_canonicalize(item, ignored_fields) for item in value]
@@ -42,10 +45,5 @@ def fingerprint_incident(
     """
 
     canonical = _canonicalize(payload, ignored_fields)
-    serialized = json.dumps(
-        {"algorithm": algorithm_version, "payload": canonical},
-        ensure_ascii=False,
-        separators=(",", ":"),
-        sort_keys=True,
-    ).encode("utf-8")
+    serialized = canonical_json_bytes({"algorithm": algorithm_version, "payload": canonical})
     return f"{algorithm_version}:sha256:{hashlib.sha256(serialized).hexdigest()}"

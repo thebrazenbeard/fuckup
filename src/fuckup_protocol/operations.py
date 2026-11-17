@@ -1,27 +1,17 @@
 from __future__ import annotations
 
 import hashlib
-import json
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import StrEnum
-from types import MappingProxyType
 from typing import Any, Callable, Mapping
 from uuid import uuid4
+
+from ._canonical_json import canonical_json_bytes, deep_freeze_json as _deep_freeze
 
 
 def _utcnow() -> datetime:
     return datetime.now(timezone.utc)
-
-
-def _deep_freeze(value: Any) -> Any:
-    if isinstance(value, Mapping):
-        return MappingProxyType({str(key): _deep_freeze(item) for key, item in value.items()})
-    if isinstance(value, list | tuple):
-        return tuple(_deep_freeze(item) for item in value)
-    if isinstance(value, set | frozenset):
-        return frozenset(_deep_freeze(item) for item in value)
-    return value
 
 
 def operation_effect_digest(
@@ -30,16 +20,13 @@ def operation_effect_digest(
     operation_kind: str,
     effect_payload: Mapping[str, Any],
 ) -> str:
-    encoded = json.dumps(
+    encoded = canonical_json_bytes(
         {
             "target": target,
             "operation_kind": operation_kind,
             "effect_payload": effect_payload,
         },
-        ensure_ascii=False,
-        separators=(",", ":"),
-        sort_keys=True,
-    ).encode("utf-8")
+    )
     return f"sha256:{hashlib.sha256(encoded).hexdigest()}"
 
 
