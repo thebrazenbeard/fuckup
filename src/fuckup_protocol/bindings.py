@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 import hashlib
-import json
 from dataclasses import dataclass
 from types import MappingProxyType
 from typing import Mapping
+
+from ._canonical_json import canonical_json_bytes
 
 
 def _freeze_selector(value: Mapping[str, str], *, field: str) -> Mapping[str, str]:
@@ -26,7 +27,7 @@ def selector_within_scope(selector: Mapping[str, str], activation_scope: Mapping
 
 
 def selector_digest(selector: Mapping[str, str]) -> str:
-    encoded = json.dumps(dict(selector), ensure_ascii=False, separators=(",", ":"), sort_keys=True).encode("utf-8")
+    encoded = canonical_json_bytes(selector)
     return f"sha256:{hashlib.sha256(encoded).hexdigest()}"
 
 
